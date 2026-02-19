@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Next.js build output
+.next/
+out/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +26,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Clerk configuration (can include secrets)
+/.clerk/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
