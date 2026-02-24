@@ -1,13 +1,13 @@
 import Google from "@auth/express/providers/google";
 import GitHub from "@auth/express/providers/github";
 import Credentials from "@auth/express/providers/credentials";
-import { MongoDBAdapter } from "@auth/mongodb-adapter";
+import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
-import client from "./db.js";
+import { prisma } from "./db.js";
 import type { AuthConfig } from "@auth/core";
 
 export const authConfig: AuthConfig = {
-    adapter: MongoDBAdapter(client),
+    adapter: PrismaAdapter(prisma),
     session: { strategy: "jwt" },
     providers: [
         Google({
@@ -31,10 +31,9 @@ export const authConfig: AuthConfig = {
                     return null;
                 }
 
-                const db = client.db();
-                const user = await db
-                    .collection("users")
-                    .findOne({ email: credentials.email as string });
+                const user = await prisma.user.findUnique({
+                    where: { email: credentials.email as string }
+                });
 
                 if (!user || !user.password) {
                     return null;
@@ -42,7 +41,7 @@ export const authConfig: AuthConfig = {
 
                 const isValid = await bcrypt.compare(
                     credentials.password as string,
-                    user.password as string
+                    user.password
                 );
 
                 if (!isValid) {
@@ -50,7 +49,7 @@ export const authConfig: AuthConfig = {
                 }
 
                 return {
-                    id: user._id.toString(),
+                    id: user.id,
                     email: user.email,
                     name: user.name,
                     image: user.image,

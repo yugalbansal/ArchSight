@@ -1,134 +1,177 @@
 "use client";
 
-import { FolderGit2, Clock, Lightbulb, DollarSign, ArrowRight, Loader2, XCircle, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { recentScans, insights } from "@/data/mockData";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { FolderGit2, Clock, ArrowRight, Loader2, XCircle, CheckCircle2, ScanSearch, Terminal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-const statCards = [
-    { label: "Total Repos", value: "4", icon: FolderGit2, color: "text-primary" },
-    { label: "Last Scan", value: "2h ago", icon: Clock, color: "text-accent" },
-    { label: "Active Insights", value: "12", icon: Lightbulb, color: "text-yellow-400" },
-    { label: "Est. LLM Cost", value: "$847", icon: DollarSign, color: "text-green-400" },
-];
-
-const severityColor: Record<string, string> = {
-    critical: "bg-red-500/20 text-red-400 border-red-500/30",
-    warning: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    info: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-};
+interface ScanDocument {
+    _id: string;
+    repo_owner: string;
+    repo_name: string;
+    branch: string;
+    status: string;
+    progress: number;
+    message: string;
+    created_at: string;
+    completed_at?: string;
+}
 
 const statusIcon: Record<string, React.ReactNode> = {
     completed: <CheckCircle2 className="h-4 w-4 text-green-400" />,
-    in_progress: <Loader2 className="h-4 w-4 text-yellow-400 animate-spin" />,
+    pending: <Clock className="h-4 w-4 text-gray-400" />,
+    cloning: <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />,
+    detecting: <Loader2 className="h-4 w-4 text-purple-400 animate-spin" />,
+    parsing: <Loader2 className="h-4 w-4 text-yellow-400 animate-spin" />,
+    extracting: <Loader2 className="h-4 w-4 text-yellow-400 animate-spin" />,
     failed: <XCircle className="h-4 w-4 text-red-400" />,
 };
 
 export default function Dashboard() {
+    const { data: session } = useSession();
+    const [scans, setScans] = useState<ScanDocument[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        async function fetchScans() {
+            if (!session?.user) return;
+            try {
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/scan/user/all`, {
+                    credentials: "include"
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setScans(data.scans || []);
+                }
+            } catch (error) {
+                console.error("Failed to fetch recent scans", error);
+            } finally {
+                setIsLoading(false);
+            }
+        }
+        fetchScans();
+    }, [session]);
+
     return (
-        <div className="space-y-8">
-            <div>
-                <h1 className="text-2xl font-bold text-foreground mb-1">Good morning, Alex 👋</h1>
-                <p className="text-muted-foreground text-sm">Here&apos;s your architecture overview.</p>
+        <div className="space-y-8 max-w-6xl mx-auto">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-foreground mb-2">
+                        Good {new Date().getHours() < 12 ? "morning" : "evening"}, {session?.user?.name?.split(" ")[0] || "Architect"} 👋
+                    </h1>
+                    <p className="text-muted-foreground text-sm">
+                        Welcome to ArchSight. Import a repository to automatically generate structural AST architecture diagrams and intelligence.
+                    </p>
+                </div>
+                <Button className="bg-blue-600 hover:bg-blue-500 text-white shadow-lg" asChild>
+                    <Link href="/scan" className="flex items-center gap-2">
+                        <ScanSearch className="h-4 w-4" />
+                        New Analysis Scan
+                    </Link>
+                </Button>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {statCards.map((s) => (
-                    <div key={s.label} className="glass p-5">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-sm text-muted-foreground">{s.label}</span>
-                            <s.icon className={`h-4 w-4 ${s.color}`} />
-                        </div>
-                        <p className="text-2xl font-bold text-foreground">{s.value}</p>
-                    </div>
-                ))}
+            {/* Quick Actions Panel */}
+            <div className="grid md:grid-cols-2 gap-4">
+                <div className="glass p-6 rounded-xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden group hover:border-blue-500/40 transition-colors">
+                    <FolderGit2 className="h-8 w-8 text-blue-400 mb-4" />
+                    <h3 className="text-lg font-bold text-foreground mb-2">Import from GitHub</h3>
+                    <p className="text-sm text-muted-foreground mb-6 max-w-sm">
+                        Install the ArchSight GitHub App to instantly list all your repositories and trigger 1-click AST generation.
+                    </p>
+                    <Button variant="default" className="bg-white text-black hover:bg-gray-200" asChild>
+                        <Link href="/repositories">Browse GitHub Repos <ArrowRight className="h-4 w-4 ml-2" /></Link>
+                    </Button>
+                </div>
+
+                <div className="glass p-6 rounded-xl border border-white/5 bg-black/20 opacity-50 cursor-not-allowed">
+                    <FolderGit2 className="h-8 w-8 text-gray-500 mb-4" />
+                    <h3 className="text-lg font-bold text-foreground mb-2">Import from GitLab (Coming Soon)</h3>
+                    <p className="text-sm text-muted-foreground mb-6 max-w-sm">
+                        Native GitLab webhook and token integration is slated for Phase 7. For now, use the GitHub integration.
+                    </p>
+                    <Button variant="outline" disabled className="bg-transparent border-white/10 text-muted-foreground">
+                        Phase 7 Feature
+                    </Button>
+                </div>
             </div>
 
-            <div className="grid lg:grid-cols-3 gap-6">
-                {/* Recent Scans */}
-                <div className="lg:col-span-2 glass p-0 overflow-hidden">
-                    <div className="flex items-center justify-between p-5 pb-0">
-                        <h2 className="text-lg font-semibold text-foreground">Recent Scans</h2>
-                        <Button variant="ghost" size="sm" className="text-muted-foreground text-xs">View all</Button>
-                    </div>
-                    <div className="p-5">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="border-white/5 hover:bg-transparent">
-                                    <TableHead className="text-muted-foreground">Repository</TableHead>
-                                    <TableHead className="text-muted-foreground">Time</TableHead>
-                                    <TableHead className="text-muted-foreground">Status</TableHead>
-                                    <TableHead className="text-muted-foreground text-right">Insights</TableHead>
+            {/* Scan History */}
+            <div className="glass p-0 rounded-xl overflow-hidden border border-white/10">
+                <div className="p-6 border-b border-white/10 bg-black/40">
+                    <h2 className="text-xl font-bold text-foreground">Scan History</h2>
+                    <p className="text-sm text-muted-foreground mt-1">Your recent asynchronous GitHub repository analyzes.</p>
+                </div>
+
+                <div className="p-0">
+                    <Table>
+                        <TableHeader className="bg-zinc-950">
+                            <TableRow className="border-white/5 hover:bg-transparent">
+                                <TableHead className="text-muted-foreground px-6">Repository</TableHead>
+                                <TableHead className="text-muted-foreground">Branch</TableHead>
+                                <TableHead className="text-muted-foreground">Time</TableHead>
+                                <TableHead className="text-muted-foreground">Status / Progress</TableHead>
+                                <TableHead className="text-right px-6 text-muted-foreground">Action</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                                        Fetching historical scans...
+                                    </TableCell>
                                 </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {recentScans.map((s, i) => (
-                                    <TableRow key={i} className="border-white/5">
-                                        <TableCell className="text-foreground font-medium">{s.org} / {s.repo}</TableCell>
-                                        <TableCell className="text-muted-foreground text-sm">{s.time}</TableCell>
+                            ) : scans.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center py-16">
+                                        <ScanSearch className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                                        <h3 className="text-lg font-medium text-foreground mb-1">No scopes found</h3>
+                                        <p className="text-sm text-muted-foreground">You haven't scanned any repositories yet.</p>
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                scans.map((s) => (
+                                    <TableRow key={s._id} className="border-white/5 hover:bg-white/[0.02]">
+                                        <TableCell className="px-6 py-4">
+                                            <div className="font-medium text-blue-400">
+                                                {s.repo_owner} / {s.repo_name}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground font-mono mt-1">ID: {s._id.slice(-6)}</div>
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground font-mono text-sm">{s.branch}</TableCell>
+                                        <TableCell className="text-muted-foreground text-sm">
+                                            {new Date(s.created_at).toLocaleDateString()}
+                                            <br />
+                                            {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </TableCell>
                                         <TableCell>
-                                            <div className="flex items-center gap-1.5">
-                                                {statusIcon[s.status]}
-                                                <span className="text-sm text-muted-foreground capitalize">{s.status.replace('_', ' ')}</span>
+                                            <div className="flex items-center gap-2">
+                                                {statusIcon[s.status] || statusIcon.pending}
+                                                <span className="text-sm font-medium capitalize text-foreground">{s.status}</span>
+                                                <span className="text-xs text-muted-foreground font-mono ml-2">{s.progress}%</span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground truncate w-48 mt-1">
+                                                {s.message}
                                             </div>
                                         </TableCell>
-                                        <TableCell className="text-right text-muted-foreground">{s.insights || '—'}</TableCell>
+                                        <TableCell className="text-right px-6">
+                                            <Button variant="ghost" size="sm" asChild className="hover:text-blue-400">
+                                                <Link href={`/scan/${s._id}`}>
+                                                    View Details
+                                                </Link>
+                                            </Button>
+                                        </TableCell>
                                     </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
-
-                {/* Health Score + Quick Actions */}
-                <div className="space-y-6">
-                    <div className="glass p-6 flex flex-col items-center">
-                        <h3 className="text-sm text-muted-foreground mb-4">Architecture Health</h3>
-                        <div className="relative w-32 h-32 mb-4">
-                            <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                                <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(var(--muted))" strokeWidth="8" />
-                                <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(39 100% 50%)" strokeWidth="8" strokeDasharray={`${74 * 2.64} ${100 * 2.64}`} strokeLinecap="round" />
-                            </svg>
-                            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <span className="text-3xl font-bold text-foreground">74</span>
-                                <span className="text-xs text-muted-foreground">/100</span>
-                            </div>
-                        </div>
-                        <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">Needs Attention</Badge>
-                    </div>
-
-                    {/* Quick Actions */}
-                    <div className="glass p-5 space-y-3">
-                        <h3 className="text-sm text-muted-foreground mb-2">Quick Actions</h3>
-                        <Button className="w-full gradient-primary text-primary-foreground border-0 justify-between" asChild>
-                            <Link href="/repositories">Scan New Repo <ArrowRight className="h-4 w-4" /></Link>
-                        </Button>
-                        <Button variant="ghost" className="w-full border border-white/10 text-foreground justify-between" asChild>
-                            <Link href="/insights">View All Insights <ArrowRight className="h-4 w-4" /></Link>
-                        </Button>
-                    </div>
+                                ))
+                            )}
+                        </TableBody>
+                    </Table>
                 </div>
             </div>
 
-            {/* Recent Insights */}
-            <div>
-                <h2 className="text-lg font-semibold text-foreground mb-4">Recent Insights</h2>
-                <div className="grid md:grid-cols-3 gap-4">
-                    {insights.slice(0, 3).map((ins) => (
-                        <div key={ins.id} className="glass p-5">
-                            <div className="flex items-center gap-2 mb-3">
-                                <Badge className={severityColor[ins.severity] + " text-xs"}>{ins.severity}</Badge>
-                                <span className="text-xs text-muted-foreground">{ins.repo}</span>
-                            </div>
-                            <h4 className="text-sm font-semibold text-foreground mb-1">{ins.type}</h4>
-                            <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{ins.suggestion}</p>
-                        </div>
-                    ))}
-                </div>
-            </div>
         </div>
     );
 }

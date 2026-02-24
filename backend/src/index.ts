@@ -5,6 +5,12 @@ import cookieParser from "cookie-parser";
 import { ExpressAuth, getSession } from "@auth/express";
 import { authConfig } from "./lib/auth-config.js";
 import userRouter from "./routes/user.js";
+import scanRouter from "./routes/scan.js";
+import githubRouter from "./routes/github.js";
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+import { scanQueue } from "./queue/index.js";
 
 dotenv.config();
 
@@ -38,6 +44,19 @@ app.use("/auth/*", ExpressAuth(authConfig));
 
 // Routes
 app.use("/api/user", userRouter);
+app.use("/api/scan", scanRouter);
+app.use("/api/github", githubRouter);
+
+// Set up Bull-Board UI for graphical queue monitoring
+const serverAdapter = new ExpressAdapter();
+serverAdapter.setBasePath('/admin/queues');
+
+createBullBoard({
+    queues: [new BullMQAdapter(scanQueue)],
+    serverAdapter: serverAdapter,
+});
+
+app.use('/admin/queues', serverAdapter.getRouter());
 
 // Health check
 app.get("/api/health", (_req, res) => {

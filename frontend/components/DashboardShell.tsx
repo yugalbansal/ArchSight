@@ -15,14 +15,14 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const navItems = [
-    { label: "Overview", icon: LayoutDashboard, path: "/dashboard" },
-    { label: "Repositories", icon: FolderGit2, path: "/repositories" },
-    { label: "Scans", icon: ScanSearch, path: "/dashboard" },
-    { label: "Insights", icon: Lightbulb, path: "/insights" },
-    { label: "Cost Engine", icon: DollarSign, path: "/dashboard" },
-    { label: "Settings", icon: Settings, path: "/dashboard" },
-    { label: "Docs", icon: FileText, path: "/dashboard" },
+export const navItems = [
+    { label: "Overview", icon: LayoutDashboard, path: "/dashboard", disabled: false },
+    { label: "Repositories (App)", icon: FolderGit2, path: "/repositories", disabled: false },
+    { label: "New Scan (Manual)", icon: ScanSearch, path: "/scan", disabled: false },
+    { label: "Insights", icon: Lightbulb, path: "/insights", disabled: true },
+    { label: "Cost Engine", icon: DollarSign, path: "/dashboard", disabled: true },
+    { label: "Settings", icon: Settings, path: "/dashboard", disabled: true },
+    { label: "Docs", icon: FileText, path: "/dashboard", disabled: true },
 ];
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -55,14 +55,20 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     </Link>
                     <nav className="hidden md:flex items-center gap-6 ml-8 text-sm">
                         {[
-                            { label: "Dashboard", href: "/dashboard" },
-                            { label: "Repositories", href: "/repositories" },
-                            { label: "Insights", href: "/insights" },
-                            { label: "Cost Analysis", href: "/dashboard" },
+                            { label: "Dashboard", href: "/dashboard", disabled: false },
+                            { label: "Repositories", href: "/repositories", disabled: false },
+                            { label: "Manual Scan", href: "/scan", disabled: false },
+                            { label: "Insights", href: "/insights", disabled: true },
                         ].map((l) => (
-                            <Link key={l.label} href={l.href} className="text-muted-foreground hover:text-foreground transition-colors">
-                                {l.label}
-                            </Link>
+                            l.disabled ? (
+                                <span key={l.label} className="text-muted-foreground/50 cursor-not-allowed">
+                                    {l.label}
+                                </span>
+                            ) : (
+                                <Link key={l.label} href={l.href} className="text-muted-foreground hover:text-foreground transition-colors">
+                                    {l.label}
+                                </Link>
+                            )
                         ))}
                     </nav>
                 </div>
@@ -140,6 +146,19 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     <nav className="flex-1 px-2 space-y-1">
                         {navItems.map((item) => {
                             const active = pathname === item.path || (item.path === "/repositories" && pathname.startsWith("/repositories"));
+                            if (item.disabled) {
+                                return (
+                                    <div
+                                        key={item.label}
+                                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all text-muted-foreground/30 cursor-not-allowed"
+                                        title="Coming soon"
+                                    >
+                                        <item.icon className="h-4 w-4 shrink-0" />
+                                        {!collapsed && <span>{item.label}</span>}
+                                    </div>
+                                );
+                            }
+
                             return (
                                 <Link
                                     key={item.label}

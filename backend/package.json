@@ -5,25 +5,42 @@
     "type": "module",
     "scripts": {
         "dev": "tsx watch src/index.ts",
+        "dev:worker": "tsx watch src/workers/scan.worker.ts",
         "build": "tsc",
-        "start": "node dist/index.js"
+        "start": "node dist/index.js",
+        "start:worker": "node dist/workers/scan.worker.js"
     },
     "dependencies": {
         "@auth/express": "^0.12.1",
-        "@auth/mongodb-adapter": "^3.11.1",
+        "@bull-board/api": "^6.20.2",
+        "@bull-board/express": "^6.20.2",
+        "@bull-board/ui": "^6.20.2",
+        "@octokit/auth-app": "^8.2.0",
+        "@octokit/webhooks": "^14.2.0",
+        "adm-zip": "^0.5.16",
         "bcryptjs": "^3.0.3",
+        "bullmq": "^5.70.1",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",
         "dotenv": "^16.4.7",
         "express": "^4.21.0",
-        "mongodb": "^6.21.0"
+        "ioredis": "^5.9.3",
+        "octokit": "^5.0.5",
+        "tree-sitter": "^0.25.0",
+        "tree-sitter-javascript": "^0.25.0",
+        "tree-sitter-python": "^0.25.0",
+        "tree-sitter-typescript": "^0.23.2"
     },
     "devDependencies": {
+        "@auth/prisma-adapter": "^2.11.1",
+        "@prisma/client": "^6.19.2",
+        "@types/adm-zip": "^0.5.7",
         "@types/bcryptjs": "^2.4.6",
         "@types/cookie-parser": "^1.4.10",
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.0",
         "@types/node": "^22.16.5",
+        "prisma": "^6.19.2",
         "tsx": "^4.19.0",
         "typescript": "^5.8.3"
     }

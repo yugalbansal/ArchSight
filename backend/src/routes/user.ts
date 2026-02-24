@@ -1,9 +1,7 @@
 import { Router, Request, Response } from "express";
 import { getSession } from "@auth/express";
 import { authConfig } from "../lib/auth-config.js";
-import client from "../lib/db.js";
-import { ObjectId } from "mongodb";
-
+import { prisma } from "../lib/db.js";
 const router = Router();
 
 // Middleware: require authenticated session
@@ -25,13 +23,9 @@ router.get("/", requireAuth, async (_req: Request, res: Response) => {
     console.log(`📥 GET /api/user — User ID: ${userId}`);
 
     try {
-        const db = client.db();
-        const user = await db
-            .collection("users")
-            .findOne(
-                { _id: new ObjectId(userId) },
-                { projection: { password: 0 } }
-            );
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        });
 
         if (!user) {
             console.log(`  ❌ User not found in DB`);
@@ -50,12 +44,12 @@ router.get("/", requireAuth, async (_req: Request, res: Response) => {
         console.log(`  ✅ Found user: ${user.email}`);
         res.json({
             user: {
-                id: user._id.toString(),
+                id: user.id,
                 email: user.email,
                 name: user.name,
                 image: user.image,
-                createdAt: user.createdAt,
-                updatedAt: user.updatedAt,
+                createdAt: user.emailVerified, // Temporary Prisma fallback if metadata missing 
+                updatedAt: new Date(),
             },
         });
     } catch (err) {
@@ -71,17 +65,10 @@ router.put("/", requireAuth, async (req: Request, res: Response) => {
     const { name } = req.body;
 
     try {
-        const db = client.db();
-        const result = await db.collection("users").findOneAndUpdate(
-            { _id: new ObjectId(userId) },
-            {
-                $set: {
-                    name,
-                    updatedAt: new Date(),
-                },
-            },
-            { returnDocument: "after", projection: { password: 0 } }
-        );
+        const result = await prisma.user.update({
+            where: { id: userId },
+            data: { name }
+        });
 
         if (!result) {
             res.status(404).json({ error: "User not found" });
@@ -90,11 +77,11 @@ router.put("/", requireAuth, async (req: Request, res: Response) => {
 
         res.json({
             user: {
-                id: result._id.toString(),
+                id: result.id,
                 email: result.email,
                 name: result.name,
                 image: result.image,
-                updatedAt: result.updatedAt,
+                updatedAt: new Date(),
             },
         });
     } catch (err) {

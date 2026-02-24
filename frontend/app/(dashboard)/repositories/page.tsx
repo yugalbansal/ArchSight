@@ -1,157 +1,168 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { FolderGit2, Loader2, ArrowRight, Github, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Github, GitlabIcon, Search, Plus, Check } from "lucide-react";
-import { repositories } from "@/data/mockData";
-import Link from "next/link";
-import { useToast } from "@/hooks/use-toast";
 
-const platformIcon: Record<string, React.ReactNode> = {
-    github: <Github className="h-4 w-4" />,
-    gitlab: <GitlabIcon className="h-4 w-4" />,
-    bitbucket: <span className="text-xs font-bold">BB</span>,
-};
+interface Repository {
+    id: number;
+    name: string;
+    full_name: string;
+    owner: string;
+    private: boolean;
+    html_url: string;
+    default_branch: string;
+    installation_id: number;
+}
 
 export default function Repositories() {
-    const [filter, setFilter] = useState("all");
-    const [search, setSearch] = useState("");
-    const [modalOpen, setModalOpen] = useState(false);
-    const [step, setStep] = useState(1);
-    const [selectedPlatform, setSelectedPlatform] = useState("");
-    const { toast } = useToast();
+    const { data: session } = useSession();
+    const router = useRouter();
+    const [repositories, setRepositories] = useState<Repository[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isScanning, setIsScanning] = useState<Record<number, boolean>>({});
 
-    const filtered = repositories.filter((r) => {
-        if (filter !== "all" && r.platform !== filter) return false;
-        if (search && !r.name.includes(search) && !r.org.includes(search)) return false;
-        return true;
-    });
+    const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || "archsight";
 
-    const handleConnect = () => {
-        toast({ title: "Repository connected!", description: "Scan started for the selected repository." });
-        setModalOpen(false);
-        setStep(1);
-        setSelectedPlatform("");
+    const fetchRepos = async () => {
+        setIsLoading(true);
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/github/repositories`, {
+                credentials: "include"
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setRepositories(data.repositories || []);
+            }
+        } catch (error) {
+            console.error("Failed to fetch repositories:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (session?.user) fetchRepos();
+    }, [session]);
+
+    const handleScanRepository = async (repo: Repository) => {
+        setIsScanning((prev) => ({ ...prev, [repo.id]: true }));
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/scan`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    owner: repo.owner,
+                    repo: repo.name,
+                    branch: repo.default_branch,
+                    // The backend automatically utilizes the Octokit Installation Token behind the scenes!
+                }),
+                credentials: "include"
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                router.push(`/scan/${data.scan_id}`); // Navigate to live scan results page
+            } else {
+                console.error("Failed to queue scan");
+            }
+        } catch (error) {
+            console.error("Trigger scan error", error);
+        } finally {
+            setIsScanning((prev) => ({ ...prev, [repo.id]: false }));
+        }
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-foreground">Repositories</h1>
-                <Button className="gradient-primary text-primary-foreground border-0 gap-2" onClick={() => setModalOpen(true)}>
-                    <Plus className="h-4 w-4" /> Connect New Repo
-                </Button>
+        <div className="space-y-6 max-w-6xl mx-auto">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-foreground mb-1">GitHub Repositories</h1>
+                    <p className="text-muted-foreground text-sm">
+                        Connect and scan your infrastructure to construct realtime Architectural AST visualizations.
+                    </p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <Button variant="outline" size="sm" onClick={fetchRepos} className="border-white/10" disabled={isLoading}>
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                        Refresh
+                    </Button>
+                    <Button className="bg-white text-black hover:bg-gray-200" asChild>
+                        <a href={`https://github.com/apps/${appSlug}/installations/new`}>
+                            <Github className="h-4 w-4 mr-2" />
+                            + New Repository
+                        </a>
+                    </Button>
+                </div>
             </div>
 
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex gap-2">
-                    {["all", "github", "gitlab"].map((f) => (
-                        <Button key={f} variant="ghost" size="sm" onClick={() => setFilter(f)}
-                            className={`border text-xs capitalize ${filter === f ? 'border-primary/40 bg-primary/10 text-primary' : 'border-white/10 text-muted-foreground'}`}>
-                            {f === "all" ? "All" : f === "github" ? "GitHub" : "GitLab"}
-                        </Button>
+            {isLoading ? (
+                <div className="glass p-16 rounded-xl flex flex-col items-center justify-center text-muted-foreground border-white/5">
+                    <Loader2 className="h-8 w-8 animate-spin mb-4 text-blue-500" />
+                    <p>Securing connection with GitHub API...</p>
+                </div>
+            ) : repositories.length === 0 ? (
+                <div className="glass p-16 rounded-xl border border-dashed border-white/20 text-center flex flex-col items-center justify-center">
+                    <div className="h-16 w-16 bg-blue-500/10 rounded-full flex items-center justify-center mb-6">
+                        <FolderGit2 className="h-8 w-8 text-blue-400" />
+                    </div>
+                    <h2 className="text-xl font-bold text-foreground mb-2">No Repositories Linked</h2>
+                    <p className="text-muted-foreground max-w-md mx-auto mb-6 text-sm">
+                        You have not granted ArchSight access to any repositories. Please install the official App into your organization or personal account.
+                    </p>
+                    <Button className="bg-blue-600 hover:bg-blue-500 text-white" asChild>
+                        <a href={`https://github.com/apps/${appSlug}/installations/new`}>
+                            Configure GitHub Access <ArrowRight className="ml-2 h-4 w-4" />
+                        </a>
+                    </Button>
+                </div>
+            ) : (
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {repositories.map((repo) => (
+                        <div key={repo.id} className="glass p-5 rounded-xl border border-white/5 hover:border-white/20 transition-all flex flex-col group">
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-10 w-10 bg-black/40 rounded-lg flex items-center justify-center shrink-0 border border-white/10">
+                                        <Github className="h-5 w-5 text-gray-300" />
+                                    </div>
+                                    <div className="overflow-hidden">
+                                        <h3 className="text-sm font-semibold text-foreground truncate" title={repo.full_name}>
+                                            {repo.name}
+                                        </h3>
+                                        <p className="text-xs text-muted-foreground truncate">{repo.owner}</p>
+                                    </div>
+                                </div>
+                                {repo.private && (
+                                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-white/10 text-gray-300">
+                                        Private
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground font-mono">
+                                    {repo.default_branch}
+                                </span>
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 hover:text-white"
+                                    onClick={() => handleScanRepository(repo)}
+                                    disabled={isScanning[repo.id]}
+                                >
+                                    {isScanning[repo.id] ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        "Trigger Scan"
+                                    )}
+                                </Button>
+                            </div>
+                        </div>
                     ))}
                 </div>
-                <div className="relative flex-1 max-w-xs">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder="Search repos..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 bg-white/5 border-white/10 text-foreground h-9" />
-                </div>
-            </div>
-
-            {/* Grid */}
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filtered.map((r) => (
-                    <div key={r.id} className="glass p-5 hover:bg-white/[0.08] transition-all">
-                        <div className="flex items-start justify-between mb-3">
-                            <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                    {platformIcon[r.platform]}
-                                    <span className="text-foreground font-medium text-sm">{r.org} / {r.name}</span>
-                                </div>
-                                <div className="flex gap-1.5 flex-wrap">
-                                    {r.languages.map((l) => <Badge key={l} variant="outline" className="text-[10px] border-white/10 text-muted-foreground px-1.5 py-0">{l}</Badge>)}
-                                </div>
-                            </div>
-                            {/* Mini score */}
-                            <div className="relative w-10 h-10 shrink-0">
-                                <svg viewBox="0 0 40 40" className="-rotate-90">
-                                    <circle cx="20" cy="20" r="16" fill="none" stroke="hsl(var(--muted))" strokeWidth="3" />
-                                    <circle cx="20" cy="20" r="16" fill="none"
-                                        stroke={r.score >= 80 ? "hsl(142 76% 36%)" : r.score >= 60 ? "hsl(39 100% 50%)" : "hsl(0 84% 60%)"}
-                                        strokeWidth="3" strokeDasharray={`${r.score} 100`} strokeLinecap="round" />
-                                </svg>
-                                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-foreground">{r.score}</span>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground mb-4">
-                            <div>Scanned: <span className="text-foreground">{r.lastScanned}</span></div>
-                            <div>Services: <span className="text-foreground">{r.services}</span></div>
-                            <div className="flex gap-1">
-                                {r.insights.critical > 0 && <span className="text-red-400">{r.insights.critical}C</span>}
-                                {r.insights.warning > 0 && <span className="text-yellow-400">{r.insights.warning}W</span>}
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button size="sm" className="flex-1 gradient-primary text-primary-foreground border-0 text-xs" asChild>
-                                <Link href={`/repositories/${r.id}`}>View Architecture</Link>
-                            </Button>
-                            <Button size="sm" variant="ghost" className="border border-white/10 text-foreground text-xs"
-                                onClick={() => toast({ title: "Scan started!", description: `Scanning ${r.org}/${r.name}...` })}>
-                                Scan Now
-                            </Button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Connect Modal */}
-            <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-                <DialogContent className="glass border-white/10 bg-card sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-foreground">Connect Repository</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex gap-2 mb-6">
-                        {[1, 2, 3].map((s) => (
-                            <div key={s} className={`flex-1 h-1 rounded-full ${step >= s ? 'gradient-primary' : 'bg-white/10'}`} />
-                        ))}
-                    </div>
-
-                    {step === 1 && (
-                        <div className="grid grid-cols-3 gap-3">
-                            {[
-                                { name: "GitHub", icon: <Github className="h-6 w-6" /> },
-                                { name: "GitLab", icon: <GitlabIcon className="h-6 w-6" /> },
-                                { name: "Bitbucket", icon: <span className="text-lg font-bold">BB</span> },
-                            ].map((p) => (
-                                <button key={p.name} onClick={() => { setSelectedPlatform(p.name); setStep(2); }}
-                                    className={`glass p-6 flex flex-col items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-all cursor-pointer ${selectedPlatform === p.name ? 'ring-1 ring-primary' : ''}`}>
-                                    {p.icon}
-                                    <span className="text-xs">{p.name}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    {step === 2 && (
-                        <div className="space-y-3">
-                            <p className="text-sm text-muted-foreground mb-2">Select repository from {selectedPlatform}</p>
-                            {["acme-corp / payment-gateway", "acme-corp / notification-hub", "startupxyz / analytics-engine"].map((r) => (
-                                <button key={r} onClick={() => setStep(3)} className="w-full text-left glass p-3 text-sm text-foreground hover:bg-white/[0.08] transition-all cursor-pointer">{r}</button>
-                            ))}
-                        </div>
-                    )}
-                    {step === 3 && (
-                        <div className="text-center space-y-4">
-                            <Check className="h-12 w-12 text-accent mx-auto" />
-                            <p className="text-foreground">Ready to scan <span className="font-semibold">acme-corp / payment-gateway</span></p>
-                            <Button className="gradient-primary text-primary-foreground border-0 w-full" onClick={handleConnect}>Confirm &amp; Start Scan</Button>
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+            )}
         </div>
     );
 }
