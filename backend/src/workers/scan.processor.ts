@@ -6,18 +6,26 @@ import path from "path";
 import { ScanModel } from "../models/scan.model.js";
 import {
     cloneRepositoryEphemeral,
-    detectFramework,
+    detectFrameworks,
     walkDir,
-    parseFileAst,
-    extractExpressRoutes,
-    extractNextjsRoutes,
-    extractFastApiRoutes,
-    extractGenericStructure,
-    ExtractedArchitecture,
-    EngineScanResult
+    initParser,
+    warmupCommonLanguages,
+    EngineScanResult,
+    Framework,
 } from "../engines/repo_engine/index.js";
+import { runV3Pipeline } from "../engines/repo_engine/v3/public.js";
 import "../lib/db.js";
-import { getInstallationOctokit } from "../lib/github.js"; // Injected Octokit Dependency
+import { getInstallationOctokit } from "../lib/github.js";
+
+// ── Worker Boot: Initialize parser once ──────────────────────────────
+// Each sandboxed process gets its own parser instance (thread safety).
+let parserReady = false;
+async function ensureParserReady(): Promise<void> {
+    if (parserReady) return;
+    await initParser();
+    await warmupCommonLanguages();
+    parserReady = true;
+}
 
 interface ScanJobData {
     scanId: string;
@@ -39,6 +47,9 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
     const { scanId, owner, repo, branch, token, installation_id } = job.data;
     console.log(`[SandboxedProcessor] Started Sandbox for Job ${job.id} - ${owner}/${repo}`);
 
+    // Initialize web-tree-sitter parser for this worker process
+    await ensureParserReady();
+
     let cloneJob = null;
     const startTime = Date.now();
 
@@ -48,8 +59,6 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
         if (!dynamicToken && installation_id) {
             console.log(`[SandboxedProcessor] Requesting temporary Installation Access Token for ${owner}/${repo}...`);
             const octokit = await getInstallationOctokit(installation_id);
-            // Octokit automatically generates the token headers when making its first query. 
-            // We can explicitly grab the token string directly via the auth properties:
             const auth = await octokit.auth({ type: "installation" }) as any;
             dynamicToken = auth.token;
         }
@@ -60,48 +69,29 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
         const rootPath = cloneJob.path;
 
         // == STAGE 2: DETECTING ==
-        await ScanModel.updateStage(scanId, "detecting", 25, "Booting detection heuristics to identify core backend frameworks...");
-        const framework = await detectFramework(rootPath);
-        console.log(`[SandboxedProcessor] Framework detected as: ${framework}`);
+        await ScanModel.updateStage(scanId, "detecting", 25, "Booting detection heuristics to identify core frameworks...");
+        const frameworks = await detectFrameworks(rootPath);
+        const primaryFramework = frameworks[0] ?? "unknown" as Framework;
+        console.log(`[SandboxedProcessor] Frameworks detected: ${frameworks.join(", ")}`);
 
-        const architecture: ExtractedArchitecture = {
-            services: [], routes: [], db_models: [], queues: [], external_apis: [], llm_calls: [], file_structure: []
-        };
-
-        // == STAGE 3: PARSING & EXTRACTING ==
-        await ScanModel.updateStage(scanId, "parsing", 40, "Spinning up Tree-sitter AST nodes and loading language grammars...");
+        // == STAGE 3: V3 SEMANTIC PIPELINE ==
+        await ScanModel.updateStage(scanId, "parsing", 40, "Spinning up V3 Semantic Engine (Parsing & Extraction)...");
         const allFiles = await walkDir(rootPath);
 
-        let parsedCount = 0;
-        const totalFiles = allFiles.length;
+        // Convert to V3 array format
+        const sourceFiles = allFiles.map(fp => {
+            let lang = "unknown";
+            if (fp.endsWith(".js") || fp.endsWith(".jsx")) lang = "javascript";
+            else if (fp.endsWith(".ts") || fp.endsWith(".tsx")) lang = "typescript";
+            else if (fp.endsWith(".py")) lang = "python";
+            else if (fp.endsWith(".java")) lang = "java";
+            else if (fp.endsWith(".go")) lang = "go";
+            else if (fp.endsWith(".rs")) lang = "rust";
+            return { path: fp, language: lang };
+        }).filter(f => f.language !== "unknown");
 
-        for (const filePath of allFiles) {
-            const parsed = await parseFileAst(filePath);
-            if (!parsed) continue;
-
-            const relativePath = path.relative(rootPath, filePath);
-
-            parsedCount++;
-            if (parsedCount % 20 === 0) {
-                const progress = 40 + Math.floor((parsedCount / totalFiles) * 50);
-                await ScanModel.updateStage(scanId, "extracting", progress, `Scanning abstract syntax trees... (${parsedCount} of ${totalFiles} files processed)`);
-            }
-
-            // Always run generic structure extraction for every file
-            const structure = extractGenericStructure(parsed, relativePath);
-            if (structure.functions.length > 0 || structure.classes.length > 0) {
-                architecture.file_structure!.push(structure);
-            }
-
-            // Framework-specific route extraction
-            if (framework === "express" || framework === "koa" || framework === "nestjs" || framework === "generic") {
-                architecture.routes.push(...extractExpressRoutes(parsed, relativePath));
-            } else if (framework === "nextjs") {
-                architecture.routes.push(...extractNextjsRoutes(parsed, relativePath));
-            } else if (framework === "fastapi" || framework === "flask" || framework === "django") {
-                architecture.routes.push(...extractFastApiRoutes(parsed, relativePath));
-            }
-        }
+        // Execute the full V3 pipeline
+        const architecture = await runV3Pipeline(scanId, rootPath, sourceFiles);
 
         const endTime = Date.now();
         const durationMs = endTime - startTime;
@@ -109,11 +99,16 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
         const engineResult: EngineScanResult = {
             scan_id: scanId,
             repo_id: `${owner}/${repo}`,
-            framework,
+            framework: primaryFramework,
+            frameworks,
             status: "completed",
             architecture,
             scanned_at: new Date().toISOString(),
-            duration_ms: durationMs
+            duration_ms: durationMs,
+            meta: {
+                parser: "web-tree-sitter",
+                version: "0.24.7",
+            },
         };
 
         // == STAGE 4: COMPLETION ==

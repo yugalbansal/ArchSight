@@ -1,17 +1,24 @@
-import path from "path";
 import crypto from "crypto";
 
 import {
     cloneRepositoryEphemeral,
-    detectFramework,
+    detectFrameworks,
     walkDir,
-    parseFileAst,
-    extractExpressRoutes,
-    extractNextjsRoutes,
-    extractFastApiRoutes,
-    ExtractedArchitecture,
-    EngineScanResult
+    initParser,
+    warmupCommonLanguages,
+    EngineScanResult,
+    Framework,
 } from "../engines/repo_engine/index.js";
+import { runV3Pipeline } from "../engines/repo_engine/v3/public.js";
+
+// Module-level parser init flag
+let parserReady = false;
+async function ensureParserReady(): Promise<void> {
+    if (parserReady) return;
+    await initParser();
+    await warmupCommonLanguages();
+    parserReady = true;
+}
 
 export class AnalysisService {
 
@@ -26,6 +33,10 @@ export class AnalysisService {
         token?: string
     ): Promise<EngineScanResult> {
         console.log(`[AnalysisService:Orchestrator] Starting scan for ${owner}/${repo}@${branch}`);
+
+        // Initialize web-tree-sitter parser (once per process)
+        await ensureParserReady();
+
         let job = null;
         const startTime = Date.now();
 
@@ -34,58 +45,46 @@ export class AnalysisService {
             job = await cloneRepositoryEphemeral(owner, repo, branch, token);
             const rootPath = job.path;
 
-            // STEP 2: Framework Detection
-            const framework = await detectFramework(rootPath);
-            console.log(`[AnalysisService:Orchestrator] Detected framework: ${framework}`);
+            // STEP 2: Framework Detection (multi-framework)
+            const frameworks = await detectFrameworks(rootPath);
+            const primaryFramework = frameworks[0] ?? "unknown" as Framework;
+            console.log(`[AnalysisService:Orchestrator] Detected frameworks: ${frameworks.join(", ")}`);
 
-            // Initialize the structured data object
-            const architecture: ExtractedArchitecture = {
-                services: [],
-                routes: [],
-                db_models: [],
-                queues: [],
-                external_apis: [],
-                llm_calls: []
-            };
-
-            // STEP 3: Walk repository and parse files
+            // STEP 3: Walk repository, collect languages, and run V3 pipeline
             console.log(`[AnalysisService:Orchestrator] Scanning files...`);
             const allFiles = await walkDir(rootPath);
 
-            for (const filePath of allFiles) {
-                // Parse file AST (Pure Function)
-                const parsed = await parseFileAst(filePath);
-                if (!parsed) continue;
+            const sourceFiles = allFiles.map(fp => {
+                let lang = "unknown";
+                if (fp.endsWith(".js") || fp.endsWith(".jsx")) lang = "javascript";
+                else if (fp.endsWith(".ts") || fp.endsWith(".tsx")) lang = "typescript";
+                else if (fp.endsWith(".py")) lang = "python";
+                else if (fp.endsWith(".java")) lang = "java";
+                else if (fp.endsWith(".go")) lang = "go";
+                else if (fp.endsWith(".rs")) lang = "rust";
+                return { path: fp, language: lang };
+            }).filter(f => f.language !== "unknown");
 
-                // Relative clean path for the JSON output (e.g. "src/routes/user.ts")
-                const relativePath = path.relative(rootPath, filePath);
-
-                // STEP 4: Extraction based on framework
-                if (framework === "express") {
-                    const routes = extractExpressRoutes(parsed, relativePath);
-                    architecture.routes.push(...routes);
-                } else if (framework === "nextjs") {
-                    const routes = extractNextjsRoutes(parsed, relativePath);
-                    architecture.routes.push(...routes);
-                } else if (framework === "fastapi") {
-                    const routes = extractFastApiRoutes(parsed, relativePath);
-                    architecture.routes.push(...routes);
-                }
-            }
+            const architecture = await runV3Pipeline(crypto.randomUUID(), rootPath, sourceFiles);
 
             const endTime = Date.now();
             console.log(`[AnalysisService:Orchestrator] Scan complete in ${endTime - startTime}ms.`);
-            console.log(`[AnalysisService:Orchestrator] Found ${architecture.routes.length} routes.`);
+            console.log(`[AnalysisService:Orchestrator] Found ${architecture.nodes.length} semantic nodes.`);
 
             // Return structured data for API/Database layers
             return {
                 scan_id: crypto.randomUUID(),
                 repo_id: `${owner}/${repo}`,
-                framework,
+                framework: primaryFramework,
+                frameworks,
                 status: "completed",
                 architecture,
                 scanned_at: new Date().toISOString(),
-                duration_ms: endTime - startTime
+                duration_ms: endTime - startTime,
+                meta: {
+                    parser: "web-tree-sitter",
+                    version: "0.24.7",
+                },
             };
 
         } catch (error) {

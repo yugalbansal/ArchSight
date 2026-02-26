@@ -10,6 +10,8 @@ console.log(`[Worker] Queue: ${SCAN_QUEUE_NAME}`);
 
 // Pass the processor function directly — no compiled .js file needed.
 // This works perfectly with `tsx watch` in development.
+// Note: web-tree-sitter init happens inside scan.processor.ts via ensureParserReady()
+// which is called once per sandboxed process (thread-safe by design).
 const scanWorker = new Worker(
     SCAN_QUEUE_NAME,
     processor,
