@@ -45,3 +45,8 @@ scanWorker.on('completed', (job) => {
 scanWorker.on('failed', (job, err) => {
     console.error(`[Worker] Job ${job?.id} failed: ${err.message}`);
 });
+
+// Heartbeat — keeps process alive on free-tier hosts (Render, etc.)
+setInterval(() => {
+    console.log(`[Worker] Heartbeat — alive | ${new Date().toISOString()}`);
+}, 300_000); // 5 minutes

@@ -20,7 +20,10 @@ const PORT = process.env.PORT || 3001;
 // CORS — allow Next.js frontend
 app.use(
     cors({
-        origin: ["http://localhost:3000"],
+        origin: [
+            "http://localhost:3000",
+            process.env.FRONTEND_URL || ""
+        ].filter(Boolean),
         credentials: true,
     })
 );
@@ -65,7 +68,8 @@ app.get("/api/health", (_req, res) => {
 
 app.listen(PORT, () => {
     console.log(`\n🚀 ArchSight server running on http://localhost:${PORT}`);
-    console.log(`   MONGODB_URI: ${process.env.MONGODB_URI ? "✅ set" : "❌ missing"}`);
+    console.log(`   REDIS_URL: ${process.env.REDIS_URL ? "✅ set" : "❌ missing"}`);
+    console.log(`   DATABASE_URL: ${process.env.DATABASE_URL ? "✅ set" : "❌ missing"}`);
     console.log(`   AUTH_SECRET: ${process.env.AUTH_SECRET ? "✅ set" : "❌ missing"}`);
     console.log(`   AUTH_GOOGLE_ID: ${process.env.AUTH_GOOGLE_ID ? "✅ set" : "⏭️  skipped"}`);
     console.log(`   AUTH_GITHUB_ID: ${process.env.AUTH_GITHUB_ID ? "✅ set" : "⏭️  skipped"}`);
