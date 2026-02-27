@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
 
-export default function GitHubAppCallback() {
+function GitHubAppCallbackContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { data: session } = useSession();
@@ -46,7 +46,7 @@ export default function GitHubAppCallback() {
                     setStatus("error");
                     setErrorMessage(data.error || "Failed to link installation to your account.");
                 }
-            } catch (error) {
+            } catch {
                 setStatus("error");
                 setErrorMessage("Network error occurred while linking GitHub App.");
             }
@@ -97,5 +97,18 @@ export default function GitHubAppCallback() {
                 </>
             )}
         </div>
+    );
+}
+
+export default function GitHubAppCallback() {
+    return (
+        <Suspense fallback={
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+                <Loader2 className="h-12 w-12 animate-spin text-blue-500 mb-6" />
+                <h1 className="text-2xl font-bold text-foreground mb-2">Loading...</h1>
+            </div>
+        }>
+            <GitHubAppCallbackContent />
+        </Suspense>
     );
 }

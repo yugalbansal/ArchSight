@@ -129,7 +129,7 @@ export default function Dashboard() {
                                     <TableCell colSpan={5} className="text-center py-16">
                                         <ScanSearch className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                                         <h3 className="text-lg font-medium text-foreground mb-1">No scopes found</h3>
-                                        <p className="text-sm text-muted-foreground">You haven't scanned any repositories yet.</p>
+                                        <p className="text-sm text-muted-foreground">You haven&apos;t scanned any repositories yet.</p>
                                     </TableCell>
                                 </TableRow>
                             ) : (

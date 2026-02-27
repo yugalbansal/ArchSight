@@ -21,6 +21,7 @@ interface ArchitectureNode {
     type: string;
     name: string;
     file: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     metadata: Record<string, any>;
     confidence: number;
 }
@@ -36,7 +37,7 @@ interface FileStructureEntry {
 
 interface ArchitectureGraph {
     nodes: ArchitectureNode[];
-    edges: any[];
+    edges: { source: string; target: string; type: string }[];
     file_structure: FileStructureEntry[];
 }
 
@@ -74,7 +75,7 @@ const methodColors: Record<string, string> = {
     PATCH: "bg-[#A855F7]/10 text-[#A855F7] border-[#A855F7]/30",
 };
 
-const nodeTypeConfig: Record<string, { label: string; color: string; icon: any; badge: string }> = {
+const nodeTypeConfig: Record<string, { label: string; color: string; icon: React.ElementType; badge: string }> = {
     http_endpoint: { label: "HTTP Endpoints", color: "#00D4FF", icon: Route, badge: "Endpoint" },
     db_operation: { label: "Database Operations", color: "#F59E0B", icon: Database, badge: "DB Op" },
     business_logic_service: { label: "Services", color: "#A855F7", icon: Server, badge: "Service" },
