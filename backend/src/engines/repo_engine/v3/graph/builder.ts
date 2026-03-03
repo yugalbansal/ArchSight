@@ -37,10 +37,7 @@ export async function buildArchitectureGraph(context: ScanContext): Promise<Arch
     for (const semNode of context.semanticNodes) {
         if (semNode.confidence < 0.4) continue;
 
-        let name = "Unknown";
-        if (semNode.metadata.method || semNode.metadata.decorator) {
-            name = `[${semNode.metadata.method || semNode.metadata.decorator}] Boundary`;
-        }
+        const name = deriveNodeName(semNode);
 
         graph.nodes.push({
             id: semNode.id,
@@ -79,7 +76,99 @@ export async function buildArchitectureGraph(context: ScanContext): Promise<Arch
 }
 
 /**
- * Lightweight AST walker to extract file-level structural metadata.
+ * Derives a human-readable name for a semantic node from its type and metadata.
+ * Priority: explicit class/service name > scopeId class > file basename > URL/host > operation targets > type label.
+ */
+function deriveNodeName(semNode: any): string {
+    const m = semNode.metadata || {};
+    const type: string = semNode.type || "";
+
+    // Explicit class or service name (service_class signals put this in metadata)
+    if (m.className) return m.className;
+    if (m.serviceName) return m.serviceName;
+    if (m.name) return m.name;
+
+    // HTTP endpoint: build label from method + path or decorator
+    if (type === "http_endpoint") {
+        if (m.method && m.path) return `${m.method.toUpperCase()} ${m.path}`;
+        if (m.decorator) {
+            const raw = String(m.decorator);
+            // Spring-style: @RequestMapping("/api/users") or @GetMapping("/users")
+            const pathMatch = raw.match(/["']([^"']+)["']/);
+            if (pathMatch) {
+                const path = pathMatch[1].replace(/^\/+|\/+$/g, "").replace(/\//g, " ").replace(/api/gi, "").trim();
+                if (path) return `${path.toUpperCase()} API`;
+            }
+            // e.g. @GetMapping → "GET API"
+            const verbMatch = raw.match(/@?(Get|Post|Put|Delete|Patch|Request)Mapping/i);
+            if (verbMatch) return `${verbMatch[1].toUpperCase()} API`;
+            return raw.replace(/[@()"']/g, "").trim() || "API Endpoint";
+        }
+        if (m.method) return `${m.method.toUpperCase()} Endpoint`;
+        // Fallback: extract class name from scopeId e.g. "src/UserController.ts::Class=UserController"
+        const classMatch = semNode.scopeId?.match(/Class=([^:]+)/);
+        if (classMatch) return classMatch[1];
+        return "API Endpoint";
+    }
+
+    // For service nodes: try to derive name from scopeId when className is missing
+    if (type === "business_logic_service") {
+        // scopeId format: "src/auth/AuthService.ts::Class=AuthService"
+        const classMatch = semNode.scopeId?.match(/Class=([^:]+)/);
+        if (classMatch) return classMatch[1];
+        // Fall back to file basename
+        if (semNode.file) {
+            const base = semNode.file.split("/").pop() || semNode.file;
+            return base.replace(/\.[^.]+$/, "");
+        }
+        return "Service";
+    }
+
+    // External service: prefer URL hostname or library name
+    if (type === "external_service") {
+        const urls: string[] = m.urls_or_args || [];
+        for (const u of urls) {
+            try { return new URL(u).hostname.replace(/^www\./, ""); } catch { /* not a URL */ }
+            if (u && u.trim()) return u.trim().slice(0, 40);
+        }
+        const libs: string[] = m.libraries || [];
+        if (libs.length > 0) return libs[0];
+        // Fallback to file basename
+        if (semNode.file) {
+            const base = semNode.file.split("/").pop() || semNode.file;
+            return base.replace(/\.[^.]+$/, "");
+        }
+        return "External Service";
+    }
+
+    // DB operation: use real model targets or file basename
+    if (type === "db_operation") {
+        const targets: string[] = (m.targets || []).filter((t: string) => !!t);
+        if (targets.length > 0) return `${targets[0]} DB`;
+        // Fall back to file basename
+        if (semNode.file) {
+            const base = semNode.file.split("/").pop() || semNode.file;
+            return base.replace(/\.[^.]+$/, "");
+        }
+        return "Database";
+    }
+
+    // Queue / worker types
+    if (type === "message_consumer") return "Message Consumer";
+    if (type === "message_publisher") return "Message Publisher";
+    if (type === "message_processor") return "Message Processor";
+    if (type === "background_worker") return "Background Worker";
+
+    // Universal fallback: file basename
+    if (semNode.file) {
+        const base = semNode.file.split("/").pop() || semNode.file;
+        return base.replace(/\.[^.]+$/, "");
+    }
+
+    return "Service";
+}
+
+/**
  * Framework-agnostic: works on raw AST node types.
  */
 function walkForStructure(node: any, entry: FileStructureEntry, language: string) {

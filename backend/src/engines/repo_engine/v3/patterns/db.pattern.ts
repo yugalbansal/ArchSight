@@ -46,7 +46,8 @@ function walk(node: any, filepath: string, signals: SignalBatch[]) {
                     occurrences: 1,
                     metadata_summary: {
                         operation: prop.text,
-                        target: fn.text.split(".")[0] // e.g. "db", "user", "prisma"
+                        target: fn.text.split(".")[0], // e.g. "db", "user", "prisma"
+                        text: fn.text                  // full expression e.g. "prisma.user"
                     }
                 });
             }

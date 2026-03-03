@@ -114,6 +114,20 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
         // == STAGE 4: COMPLETION ==
         console.log(`[SandboxedProcessor] Job successfully completed in ${durationMs}ms`);
         await ScanModel.markCompleted(scanId, engineResult);
+
+        // == STAGE 5: ENGINE 2 ARCHITECTURE ANALYSIS ==
+        try {
+            console.log(`[SandboxedProcessor] Triggering Engine 2 Architecture Analysis...`);
+            const { ArchitectureEngine } = await import("../engines/architecture_engine/index.js");
+            const architectureEngine = new ArchitectureEngine();
+
+            await architectureEngine.analyzeAndSave(scanId);
+            console.log(`[SandboxedProcessor] Engine 2 analysis completed for scan ${scanId}`);
+        } catch (archError: any) {
+            console.error(`[SandboxedProcessor] Engine 2 analysis failed (non-critical):`, archError.message);
+            // Don't fail the entire job if architecture analysis fails
+        }
+
         return engineResult;
 
     } catch (error: any) {

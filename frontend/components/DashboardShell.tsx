@@ -19,7 +19,7 @@ export const navItems = [
     { label: "Overview", icon: LayoutDashboard, path: "/dashboard", disabled: false },
     { label: "Repositories (App)", icon: FolderGit2, path: "/repositories", disabled: false },
     { label: "New Scan (Manual)", icon: ScanSearch, path: "/scan", disabled: false },
-    { label: "Insights", icon: Lightbulb, path: "/insights", disabled: true },
+    { label: "Architecture Gallery", icon: Lightbulb, path: "/insights", disabled: false },
     { label: "Cost Engine", icon: DollarSign, path: "/dashboard", disabled: true },
     { label: "Settings", icon: Settings, path: "/dashboard", disabled: true },
     { label: "Docs", icon: FileText, path: "/dashboard", disabled: true },
@@ -58,7 +58,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                             { label: "Dashboard", href: "/dashboard", disabled: false },
                             { label: "Repositories", href: "/repositories", disabled: false },
                             { label: "Manual Scan", href: "/scan", disabled: false },
-                            { label: "Insights", href: "/insights", disabled: true },
+                            { label: "Architecture Gallery", href: "/insights", disabled: false },
                         ].map((l) => (
                             l.disabled ? (
                                 <span key={l.label} className="text-muted-foreground/50 cursor-not-allowed">

@@ -20,15 +20,12 @@ router.get("/", requireAuth, async (_req: Request, res: Response) => {
     const session = res.locals.session;
     const userId = session.user.id;
 
-    console.log(`📥 GET /api/user — User ID: ${userId}`);
-
     try {
         const user = await prisma.user.findUnique({
             where: { id: userId }
         });
 
         if (!user) {
-            console.log(`  ❌ User not found in DB`);
             // Return session data as fallback
             res.json({
                 user: {
@@ -41,7 +38,6 @@ router.get("/", requireAuth, async (_req: Request, res: Response) => {
             return;
         }
 
-        console.log(`  ✅ Found user: ${user.email}`);
         res.json({
             user: {
                 id: user.id,
@@ -53,7 +49,7 @@ router.get("/", requireAuth, async (_req: Request, res: Response) => {
             },
         });
     } catch (err) {
-        console.error("  ❌ Error fetching user:", err);
+        console.error("Error fetching user:", err);
         res.status(500).json({ error: "Failed to fetch user" });
     }
 });

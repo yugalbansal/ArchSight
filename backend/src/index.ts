@@ -7,6 +7,7 @@ import { authConfig } from "./lib/auth-config.js";
 import userRouter from "./routes/user.js";
 import scanRouter from "./routes/scan.js";
 import githubRouter from "./routes/github.js";
+import architectureRouter from "./routes/architecture.routes.js";
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -49,6 +50,7 @@ app.use("/auth/*", ExpressAuth(authConfig));
 app.use("/api/user", userRouter);
 app.use("/api/scan", scanRouter);
 app.use("/api/github", githubRouter);
+app.use("/api/architecture", architectureRouter);
 
 // Set up Bull-Board UI for graphical queue monitoring
 const serverAdapter = new ExpressAdapter();

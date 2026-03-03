@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 
 // ─── V3 ArchitectureGraph Types ──────────────────────────────────────
 
@@ -36,9 +37,9 @@ interface FileStructureEntry {
 }
 
 interface ArchitectureGraph {
-    nodes: ArchitectureNode[];
-    edges: { source: string; target: string; type: string }[];
-    file_structure: FileStructureEntry[];
+    nodes?: ArchitectureNode[];
+    edges?: { source: string; target: string; type: string }[];
+    file_structure?: FileStructureEntry[];
 }
 
 interface ScanResult {
@@ -58,7 +59,7 @@ interface ScanResult {
         framework: string;
         frameworks?: string[];
         status: string;
-        architecture: ArchitectureGraph;
+        architecture?: ArchitectureGraph;
         scanned_at: string;
         duration_ms: number;
         meta?: { parser: string; version: string };
@@ -105,8 +106,14 @@ function shortenPath(fullPath: string): string {
     return parts.slice(-3).join("/");
 }
 
-function groupNodesByType(nodes: ArchitectureNode[]): Record<string, ArchitectureNode[]> {
+function groupNodesByType(nodes: ArchitectureNode[] | undefined | null): Record<string, ArchitectureNode[]> {
     const groups: Record<string, ArchitectureNode[]> = {};
+
+    // Handle case where nodes is undefined, null, or not an array
+    if (!nodes || !Array.isArray(nodes)) {
+        return groups;
+    }
+
     for (const node of nodes) {
         if (!groups[node.type]) groups[node.type] = [];
         groups[node.type].push(node);
@@ -124,6 +131,7 @@ export default function ScanResultPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
+    const [activeTab, setActiveTab] = useState<'analysis' | 'architecture'>('analysis');
 
     useEffect(() => {
         if (!session?.user || !id) return;
@@ -204,7 +212,7 @@ export default function ScanResultPage() {
     const result = scan.engine_result;
     const arch = result?.architecture;
     const isProcessing = !["completed", "failed"].includes(scan.status);
-    const groupedNodes = arch ? groupNodesByType(arch.nodes) : {};
+    const groupedNodes = groupNodesByType(arch?.nodes);
     const nodeTypes = Object.keys(groupedNodes);
 
     return (
@@ -349,8 +357,53 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
+                {/* ─── Tabs ──────────────────────────────────────────── */}
+                {result && (
+                    <div className="border-b border-[#1E1E2E]">
+                        <nav className="-mb-px flex space-x-8">
+                            <button
+                                onClick={() => setActiveTab('analysis')}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                    activeTab === 'analysis'
+                                        ? 'border-[#6C63FF] text-[#6C63FF]'
+                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                }`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Network className="h-4 w-4" />
+                                    Semantic Analysis
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('architecture')}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                    activeTab === 'architecture'
+                                        ? 'border-[#00D4FF] text-[#00D4FF]'
+                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                }`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Layers className="h-4 w-4" />
+                                    Architecture Diagram
+                                </span>
+                            </button>
+                        </nav>
+                    </div>
+                )}
+
+                {/* ─── Tab Content: Architecture Diagram ─────────────────── */}
+                {result && activeTab === 'architecture' && (
+                    <div className="reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+                        <ArchitectureDiagram scanId={id} />
+                    </div>
+                )}
+
+                {/* ─── Tab Content: Analysis Results ─────────────────────── */}
+                {result && activeTab === 'analysis' && (
+                <div className="space-y-8">
+
                 {/* ─── Semantic Node Sections ─────────────────────────── */}
-                {arch && arch.nodes.length > 0 && (
+                {arch && arch.nodes && Array.isArray(arch.nodes) && arch.nodes.length > 0 && (
                     <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]" style={{ animationDelay: '200ms' }}>
                         {Object.entries(groupedNodes).map(([type, nodes]) => {
                             const config = nodeTypeConfig[type] || { label: type, color: "#A0A0C0", icon: Box, badge: type };
@@ -581,7 +634,9 @@ export default function ScanResultPage() {
                 )}
 
                 {/* ─── Empty State ─────────────────────────────────────── */}
-                {arch && arch.nodes.length === 0 && (!arch.file_structure || arch.file_structure.length === 0) && (
+                {arch &&
+                 (!arch.nodes || !Array.isArray(arch.nodes) || arch.nodes.length === 0) &&
+                 (!arch.file_structure || !Array.isArray(arch.file_structure) || arch.file_structure.length === 0) && (
                     <div className="bg-[#13131E] border border-dashed border-[#1E1E2E] rounded-2xl p-16 text-center reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
                         <Network className="h-12 w-12 text-[#5A5A7A] mx-auto mb-6 opacity-50" />
                         <h3 className="text-xl font-bold text-white mb-3">No Architectural Components Detected</h3>
@@ -590,6 +645,9 @@ export default function ScanResultPage() {
                         </p>
                     </div>
                 )}
+
+                </div>
+                )} {/* Close analysis tab content */}
             </div>
 
             <style dangerouslySetInnerHTML={{

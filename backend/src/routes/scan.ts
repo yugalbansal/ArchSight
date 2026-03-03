@@ -73,6 +73,25 @@ router.post("/", async (req, res) => {
 });
 
 /**
+ * GET /api/scan/history
+ * Alias for /api/scan/user/all - Fetch all scans belonging to the current user.
+ */
+router.get("/history", async (req, res) => {
+    try {
+        const session = await getSession(req, authConfig);
+        if (!session?.user?.id) {
+            return res.status(401).json({ error: "Unauthorized. Please log in." });
+        }
+
+        const scans = await ScanModel.getByUserId(session.user.id);
+        res.status(200).json({ scans });
+    } catch (error) {
+        console.error("[API:Scan] Failed to fetch user scans:", error);
+        res.status(500).json({ error: "Internal Server Error fetching historical scans." });
+    }
+});
+
+/**
  * GET /api/scan/user/all
  * Fetch all scans belonging to the current user.
  */
