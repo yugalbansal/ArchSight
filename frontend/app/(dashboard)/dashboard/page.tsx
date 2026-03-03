@@ -26,6 +26,7 @@ const statusIcon: Record<string, React.ReactNode> = {
     detecting: <Loader2 className="h-4 w-4 text-purple-400 animate-spin" />,
     parsing: <Loader2 className="h-4 w-4 text-yellow-400 animate-spin" />,
     extracting: <Loader2 className="h-4 w-4 text-yellow-400 animate-spin" />,
+    analysing: <Loader2 className="h-4 w-4 text-indigo-400 animate-spin" />,
     failed: <XCircle className="h-4 w-4 text-red-400" />,
 };
 

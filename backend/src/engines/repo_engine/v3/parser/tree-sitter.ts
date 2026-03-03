@@ -2,19 +2,21 @@ import fs from "fs/promises";
 import path from "path";
 import { createHash } from "crypto";
 import { fileURLToPath } from "url";
-import { Parser, Language, Query, type Node as TSNode } from "web-tree-sitter";
+import Parser from "web-tree-sitter";
 import { ParserResult, SupportedLanguage, ASTTree } from "../../schemas/architecture.schema.js";
 
-// ─── Re-export web-tree-sitter types for extractors ──────────────────
+// ─── Re-export types for extractors ──────────────────────────────────
 
-export type { Language as TSLanguage, Query as TSQuery, Node as TSNode } from "web-tree-sitter";
+export type TSLanguage = Parser.Language;
+export type TSQuery = ReturnType<Parser.Language["query"]>;
+export type TSNode = Parser.SyntaxNode;
 
 // ─── Module-Level Singletons (per-worker isolation) ──────────────────
 
 let parserInstance: Parser | null = null;
 let initialized = false;
-const languageCache = new Map<string, Language>();
-const queryCache = new Map<string, Query>();
+const languageCache = new Map<string, Parser.Language>();
+const queryCache = new Map<string, TSQuery>();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,7 +127,7 @@ export async function warmupCommonLanguages(): Promise<void> {
  * Load a WASM grammar for the given language. Cached after first load.
  * Returns null if grammar file doesn't exist (graceful degradation).
  */
-async function loadLanguage(lang: string): Promise<Language | null> {
+async function loadLanguage(lang: string): Promise<Parser.Language | null> {
     if (lang === "unknown") return null;
 
     // Check cache first
@@ -149,7 +151,7 @@ async function loadLanguage(lang: string): Promise<Language | null> {
         return null;
     }
 
-    const language = await Language.load(wasmPath);
+    const language = await Parser.Language.load(wasmPath);
     languageCache.set(lang, language);
     console.log(`[Parser] Loaded grammar: ${lang}`);
     return language;
@@ -159,7 +161,7 @@ async function loadLanguage(lang: string): Promise<Language | null> {
  * Get a loaded language grammar. For use by extractors to build queries.
  * Returns null if language is unsupported.
  */
-export async function getLanguageGrammar(lang: SupportedLanguage): Promise<Language | null> {
+export async function getLanguageGrammar(lang: SupportedLanguage): Promise<Parser.Language | null> {
     return loadLanguage(lang);
 }
 
@@ -176,7 +178,7 @@ function hashQueryString(queryString: string): string {
 export async function getOrCreateQuery(
     lang: SupportedLanguage,
     queryString: string
-): Promise<Query | null> {
+): Promise<TSQuery | null> {
     const cacheKey = `${lang}:${hashQueryString(queryString)}`;
 
     if (queryCache.has(cacheKey)) {
@@ -186,7 +188,7 @@ export async function getOrCreateQuery(
     const language = await loadLanguage(lang);
     if (!language) return null;
 
-    const query = new Query(language, queryString);
+    const query = language.query(queryString);
     queryCache.set(cacheKey, query);
     return query;
 }

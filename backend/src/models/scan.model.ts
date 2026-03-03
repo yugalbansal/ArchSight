@@ -1,7 +1,7 @@
 import { prisma } from "../lib/db.js";
 import { EngineScanResult } from "../engines/repo_engine/index.js";
 
-export type ScanStatus = "pending" | "cloning" | "detecting" | "parsing" | "extracting" | "completed" | "failed";
+export type ScanStatus = "pending" | "cloning" | "detecting" | "parsing" | "extracting" | "analysing" | "completed" | "failed";
 
 export class ScanModel {
     /**

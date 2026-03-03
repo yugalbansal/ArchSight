@@ -1,6 +1,6 @@
 import { ASTTree, SupportedLanguage } from "../../schemas/architecture.schema.js";
 import { ASTIndex, ASTReference } from "../core/scan_context.js";
-import { Parser } from "web-tree-sitter";
+import Parser from "web-tree-sitter";
 import { getLanguageGrammar } from "./tree-sitter.js";
 import fs from "fs/promises";
 import path from "path";

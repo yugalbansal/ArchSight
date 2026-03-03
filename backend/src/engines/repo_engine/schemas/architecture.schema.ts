@@ -115,6 +115,7 @@ export interface ExtractedArchitecture {
 // ─── Engine Scan Result ──────────────────────────────────────────────
 
 import { ArchitectureGraph } from "../v3/graph/builder.js";
+import type { IntelligenceOutput } from "../../intelligence_engine/schemas.js";
 
 export interface EngineScanResult {
     scan_id: string;
@@ -123,6 +124,7 @@ export interface EngineScanResult {
     frameworks?: Framework[];
     status: "completed" | "failed";
     architecture: ExtractedArchitecture | ArchitectureGraph;
+    intelligence?: IntelligenceOutput;
     scanned_at: string;
     duration_ms: number;
     meta?: {
