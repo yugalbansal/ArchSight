@@ -33,6 +33,10 @@ export const CoreServiceRule: SemanticRule = {
 
         const file = signals[0]?.file || "unknown";
 
+        // Extract the real class name from the service_class signal
+        const serviceSignal = signals.find(s => s.kind === "service_class");
+        const className: string | undefined = serviceSignal?.metadata_summary?.className;
+
         let confidence = 0.5;
         let state: "resolved" | "partial" | "unknown" = "partial";
 
@@ -59,6 +63,7 @@ export const CoreServiceRule: SemanticRule = {
             confidence,
             state,
             metadata: {
+                className,                                    // ← real name from AST
                 has_injected_dependencies: hasDependencies,
                 executes_persistence: hasChildDbOps,
                 explicitly_named_service: hasServiceMarker

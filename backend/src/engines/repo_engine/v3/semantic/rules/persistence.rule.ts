@@ -25,7 +25,29 @@ export const PersistenceRule: SemanticRule = {
 
         for (const op of ops) {
             if (op.metadata_summary.operation) metadata.operations.push(op.metadata_summary.operation);
-            if (op.metadata_summary.target) metadata.targets.push(op.metadata_summary.target);
+            if (op.metadata_summary.target) {
+                // target is fn.text.split(".")[0] from the pattern extractor, e.g.
+                // "prisma.user.findMany" → target="prisma" (useless)
+                // "this.userRepository.save" → target="this" (useless)
+                // We also receive the full fn text via metadata_summary.text if available.
+                // Filter out generic ORM roots and keep meaningful model names.
+                const raw: string = op.metadata_summary.target;
+                const fullText: string = op.metadata_summary.text || "";
+
+                // Try to extract model name from full member expression: prisma.user.findMany → "user"
+                const parts = fullText.split(".");
+                const modelCandidate = parts.length >= 3
+                    ? parts[parts.length - 2]  // second-to-last segment before the method
+                    : raw;
+
+                const genericRoots = /^(prisma|db|database|repo|repository|this|self|em|manager|session|conn|connection|client|knex|sequelize|mongoose|orm|pool)$/i;
+                const cleaned = genericRoots.test(modelCandidate) ? null : modelCandidate;
+
+                if (cleaned) {
+                    // Capitalize first letter for display
+                    metadata.targets.push(cleaned.charAt(0).toUpperCase() + cleaned.slice(1));
+                }
+            }
             if (op.metadata_summary.queryPreview) metadata.operations.push("RAW_SQL");
         }
 

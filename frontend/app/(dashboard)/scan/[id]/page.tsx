@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 
 // ─── V3 ArchitectureGraph Types ──────────────────────────────────────
 
@@ -39,9 +40,9 @@ interface FileStructureEntry {
 }
 
 interface ArchitectureGraph {
-    nodes: ArchitectureNode[];
-    edges: { source: string; target: string; type: string }[];
-    file_structure: FileStructureEntry[];
+    nodes?: ArchitectureNode[];
+    edges?: { source: string; target: string; type: string }[];
+    file_structure?: FileStructureEntry[];
 }
 
 // ─── Intelligence Engine Types ────────────────────────────────────────
@@ -132,7 +133,7 @@ interface ScanResult {
         framework: string;
         frameworks?: string[];
         status: string;
-        architecture: ArchitectureGraph;
+        architecture?: ArchitectureGraph;
         intelligence?: IntelligenceOutput;
         scanned_at: string;
         duration_ms: number;
@@ -225,8 +226,14 @@ function shortenPath(fullPath: string): string {
     return parts.slice(-3).join("/");
 }
 
-function groupNodesByType(nodes: ArchitectureNode[]): Record<string, ArchitectureNode[]> {
+function groupNodesByType(nodes: ArchitectureNode[] | undefined | null): Record<string, ArchitectureNode[]> {
     const groups: Record<string, ArchitectureNode[]> = {};
+
+    // Handle case where nodes is undefined, null, or not an array
+    if (!nodes || !Array.isArray(nodes)) {
+        return groups;
+    }
+
     for (const node of nodes) {
         if (!groups[node.type]) groups[node.type] = [];
         groups[node.type].push(node);
@@ -322,9 +329,7 @@ export default function ScanResultPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
-    const [activeTab, setActiveTab] = useState<"architecture" | "intelligence">("architecture");
-    const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
-    const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'analysis' | 'architecture' | 'intelligence'>('analysis');
 
     useEffect(() => {
         if (!session?.user || !id) return;
@@ -406,7 +411,7 @@ export default function ScanResultPage() {
     const arch = result?.architecture;
     const intel = result?.intelligence;
     const isProcessing = !["completed", "failed"].includes(scan.status);
-    const groupedNodes = arch ? groupNodesByType(arch.nodes) : {};
+    const groupedNodes = groupNodesByType(arch?.nodes);
     const nodeTypes = Object.keys(groupedNodes);
 
     return (
@@ -551,41 +556,265 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
-                {/* ─── Tab Switcher ────────────────────────────────────── */}
+                {/* ─── Tabs ──────────────────────────────────────────── */}
                 {result && (
-                    <div className="flex gap-1 bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-1 w-fit">
-                        <button
-                            onClick={() => setActiveTab("architecture")}
-                            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-                                activeTab === "architecture"
-                                    ? "bg-[#1E1E2E] text-white shadow"
-                                    : "text-[#5A5A7A] hover:text-[#A0A0C0]"
-                            }`}
-                        >
-                            <Network className="h-4 w-4" />
-                            Architecture
-                        </button>
-                        <button
-                            onClick={() => setActiveTab("intelligence")}
-                            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
-                                activeTab === "intelligence"
-                                    ? "bg-[#6C63FF]/20 text-[#A89CFF] shadow border border-[#6C63FF]/30"
-                                    : "text-[#5A5A7A] hover:text-[#A0A0C0]"
-                            }`}
-                        >
-                            <ShieldAlert className="h-4 w-4" />
-                            Intelligence
-                            {intel && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono border ${riskConfig[intel.overall_risk_level].bg} ${riskConfig[intel.overall_risk_level].border}`} style={{ color: riskConfig[intel.overall_risk_level].color }}>
-                                    {intel.overall_risk_level.toUpperCase()}
+                    <div className="border-b border-[#1E1E2E]">
+                        <nav className="-mb-px flex space-x-8">
+                            <button
+                                onClick={() => setActiveTab('analysis')}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                    activeTab === 'analysis'
+                                        ? 'border-[#6C63FF] text-[#6C63FF]'
+                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                }`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Network className="h-4 w-4" />
+                                    Semantic Analysis
                                 </span>
-                            )}
-                        </button>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('architecture')}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                    activeTab === 'architecture'
+                                        ? 'border-[#00D4FF] text-[#00D4FF]'
+                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                }`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Layers className="h-4 w-4" />
+                                    Architecture Diagram
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('intelligence')}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                    activeTab === 'intelligence'
+                                        ? 'border-[#A855F7] text-[#A855F7]'
+                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                }`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <ShieldAlert className="h-4 w-4" />
+                                    Intelligence Engine
+                                    {intel && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono border ${
+                                            intel.overall_risk_level === 'critical' ? 'bg-[#FF2D55]/10 text-[#FF2D55] border-[#FF2D55]/30' :
+                                            intel.overall_risk_level === 'high' ? 'bg-[#FF4C6A]/10 text-[#FF4C6A] border-[#FF4C6A]/30' :
+                                            intel.overall_risk_level === 'medium' ? 'bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30' :
+                                            'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/30'
+                                        }`}>
+                                            {intel.overall_risk_level.toUpperCase()}
+                                        </span>
+                                    )}
+                                </span>
+                            </button>
+                        </nav>
                     </div>
                 )}
 
+                {/* ─── Tab Content: Architecture Diagram ─────────────────── */}
+                {result && activeTab === 'architecture' && (
+                    <div className="reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+                        <ArchitectureDiagram scanId={id} />
+                    </div>
+                )}
+
+                {/* ─── Tab Content: Intelligence Engine ──────────────────── */}
+                {result && activeTab === 'intelligence' && intel && (
+                    <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+
+                        {/* Risk Banner */}
+                        <div className={`rounded-2xl p-6 border ${
+                            intel.overall_risk_level === 'critical' ? 'bg-[#FF2D55]/5 border-[#FF2D55]/20' :
+                            intel.overall_risk_level === 'high' ? 'bg-[#FF4C6A]/5 border-[#FF4C6A]/20' :
+                            intel.overall_risk_level === 'medium' ? 'bg-[#F59E0B]/5 border-[#F59E0B]/20' :
+                            'bg-[#22C55E]/5 border-[#22C55E]/20'
+                        }`}>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                        intel.overall_risk_level === 'critical' ? 'bg-[#FF2D55]/10' :
+                                        intel.overall_risk_level === 'high' ? 'bg-[#FF4C6A]/10' :
+                                        intel.overall_risk_level === 'medium' ? 'bg-[#F59E0B]/10' :
+                                        'bg-[#22C55E]/10'
+                                    }`}>
+                                        <Flame className={`h-6 w-6 ${
+                                            intel.overall_risk_level === 'critical' ? 'text-[#FF2D55]' :
+                                            intel.overall_risk_level === 'high' ? 'text-[#FF4C6A]' :
+                                            intel.overall_risk_level === 'medium' ? 'text-[#F59E0B]' :
+                                            'text-[#22C55E]'
+                                        }`} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-mono tracking-[3px] text-[#5A5A7A] mb-1">OVERALL RISK LEVEL</p>
+                                        <p className={`text-2xl font-extrabold ${
+                                            intel.overall_risk_level === 'critical' ? 'text-[#FF2D55]' :
+                                            intel.overall_risk_level === 'high' ? 'text-[#FF4C6A]' :
+                                            intel.overall_risk_level === 'medium' ? 'text-[#F59E0B]' :
+                                            'text-[#22C55E]'
+                                        }`}>{intel.overall_risk_level.toUpperCase()}</p>
+                                        <p className="text-sm text-[#A0A0C0] mt-1">{intel.architectural_theme}</p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className={`text-3xl font-extrabold ${
+                                        intel.overall_risk_level === 'critical' ? 'text-[#FF2D55]' :
+                                        intel.overall_risk_level === 'high' ? 'text-[#FF4C6A]' :
+                                        intel.overall_risk_level === 'medium' ? 'text-[#F59E0B]' :
+                                        'text-[#22C55E]'
+                                    }`}>{intel.metrics.risk_score}<span className="text-sm text-[#5A5A7A]">/100</span></p>
+                                    <p className="text-[10px] font-mono text-[#5A5A7A]">risk score</p>
+                                    <p className="text-[10px] text-[#5A5A7A] mt-1">confidence: <span className="text-[#A0A0C0]">{intel.confidence_level}</span></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Metrics Grid */}
+                        <div className="grid grid-cols-4 gap-3">
+                            {[
+                                { label: 'Nodes', value: intel.metrics.total_nodes, icon: Activity, warn: false },
+                                { label: 'Edges', value: intel.metrics.total_edges, icon: GitFork, warn: false },
+                                { label: 'Cycles', value: intel.metrics.cycles_detected, icon: RefreshCw, warn: intel.metrics.cycles_detected > 0 },
+                                { label: 'Max Depth', value: intel.metrics.max_depth, icon: BarChart3, warn: intel.metrics.max_depth > 6 },
+                                { label: 'Density', value: intel.metrics.density.toFixed(2), icon: Gauge, warn: intel.metrics.density > 0.2 },
+                                { label: 'Coupling', value: intel.metrics.coupling_score.toFixed(1), icon: Target, warn: intel.metrics.coupling_score > 15 },
+                                { label: 'Avg Instability', value: intel.metrics.avg_instability.toFixed(2), icon: TrendingUp, warn: intel.metrics.avg_instability > 0.65 },
+                                { label: 'SCCs', value: intel.metrics.strongly_connected_components, icon: Eye, warn: false },
+                            ].map(({ label, value, icon: Icon, warn }) => (
+                                <div key={label} className={`rounded-xl p-4 border ${warn ? 'bg-[#FF4C6A]/5 border-[#FF4C6A]/20' : 'bg-[#13131E] border-[#1E1E2E]'}`}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Icon className={`h-3 w-3 ${warn ? 'text-[#FF4C6A]' : 'text-[#5A5A7A]'}`} />
+                                        <span className={`text-[10px] font-mono ${warn ? 'text-[#FF4C6A]' : 'text-[#5A5A7A]'}`}>{label}</span>
+                                    </div>
+                                    <p className={`text-xl font-bold ${warn ? 'text-[#FF4C6A]' : 'text-white'}`}>{value}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Detected Patterns */}
+                        {intel.detected_patterns.length > 0 && (
+                            <div className="bg-[#13131E] border border-[#1E1E2E] rounded-2xl overflow-hidden">
+                                <div className="p-4 border-b border-[#1E1E2E] flex items-center gap-2">
+                                    <AlertTriangle className="h-4 w-4 text-[#F59E0B]" />
+                                    <span className="text-sm font-bold text-white">Detected Patterns</span>
+                                    <span className="text-[10px] font-mono text-[#5A5A7A] ml-auto">{intel.detected_patterns.length} found</span>
+                                </div>
+                                {intel.detected_patterns.map((p, i) => (
+                                    <div key={i} className={`p-4 flex items-start gap-3 ${i < intel.detected_patterns.length - 1 ? 'border-b border-[#1E1E2E]/50' : ''}`}>
+                                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                                            p.severity === 'critical' ? 'bg-[#FF2D55]' :
+                                            p.severity === 'high' ? 'bg-[#FF4C6A]' :
+                                            p.severity === 'medium' ? 'bg-[#F59E0B]' :
+                                            'bg-[#22C55E]'
+                                        }`} />
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-xs font-semibold text-white font-mono">{p.type.replace(/_/g, ' ')}</span>
+                                                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full border ${
+                                                    p.severity === 'critical' ? 'text-[#FF2D55] bg-[#FF2D55]/10 border-[#FF2D55]/30' :
+                                                    p.severity === 'high' ? 'text-[#FF4C6A] bg-[#FF4C6A]/10 border-[#FF4C6A]/30' :
+                                                    p.severity === 'medium' ? 'text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30' :
+                                                    'text-[#22C55E] bg-[#22C55E]/10 border-[#22C55E]/30'
+                                                }`}>{p.severity}</span>
+                                            </div>
+                                            <p className="text-xs text-[#A0A0C0] leading-relaxed">{p.description}</p>
+                                            {Object.keys(p.evidence).length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                                    {Object.entries(p.evidence).map(([k, v]) => (
+                                                        <span key={k} className="text-[9px] font-mono text-[#5A5A7A] bg-[#0A0A0F] border border-[#1E1E2E] rounded px-1.5 py-0.5">{k}: {String(v)}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Insights */}
+                        {intel.insights.length > 0 && (
+                            <div className="bg-[#13131E] border border-[#1E1E2E] rounded-2xl overflow-hidden">
+                                <div className="p-4 border-b border-[#1E1E2E] flex items-center gap-2">
+                                    <Lightbulb className="h-4 w-4 text-[#6C63FF]" />
+                                    <span className="text-sm font-bold text-white">Insights</span>
+                                    <span className="text-[10px] font-mono text-[#5A5A7A] ml-auto">{intel.insights.length} items</span>
+                                </div>
+                                {intel.insights.map((ins, i) => (
+                                    <div key={ins.id} className={`p-4 ${i < intel.insights.length - 1 ? 'border-b border-[#1E1E2E]/50' : ''}`}>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full border ${
+                                                ins.severity === 'critical' ? 'text-[#FF2D55] bg-[#FF2D55]/10 border-[#FF2D55]/30' :
+                                                ins.severity === 'high' ? 'text-[#FF4C6A] bg-[#FF4C6A]/10 border-[#FF4C6A]/30' :
+                                                ins.severity === 'medium' ? 'text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30' :
+                                                'text-[#22C55E] bg-[#22C55E]/10 border-[#22C55E]/30'
+                                            }`}>{ins.severity}</span>
+                                            <span className="text-[9px] font-mono text-[#5A5A7A] bg-[#0A0A0F] border border-[#1E1E2E] rounded px-1.5 py-0.5">{ins.category}</span>
+                                        </div>
+                                        <h4 className="text-sm font-semibold text-white mb-1">{ins.title}</h4>
+                                        <p className="text-xs text-[#A0A0C0] leading-relaxed mb-3">{ins.description}</p>
+                                        <div className="bg-[#6C63FF]/5 border border-[#6C63FF]/15 rounded-lg p-3">
+                                            <p className="text-[10px] font-mono text-[#6C63FF] mb-1">RECOMMENDATION</p>
+                                            <p className="text-xs text-[#c4b5fd] leading-relaxed">{ins.recommendation}</p>
+                                        </div>
+                                        <p className="text-[10px] font-mono text-[#3A3A4A] mt-2">triggered by: {ins.triggered_by}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Strategic Guidance */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-[#13131E] border border-[#1E1E2E] rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Target className="h-3.5 w-3.5 text-[#6C63FF]" />
+                                    <span className="text-xs font-bold text-[#A0A0C0]">Refactor Strategy</span>
+                                </div>
+                                <p className="text-xs text-[#cbd5e1] leading-relaxed">{intel.refactor_strategy}</p>
+                            </div>
+                            <div className="bg-[#13131E] border border-[#1E1E2E] rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <TrendingUp className="h-3.5 w-3.5 text-[#6C63FF]" />
+                                    <span className="text-xs font-bold text-[#A0A0C0]">Scaling Outlook</span>
+                                </div>
+                                <p className="text-xs text-[#cbd5e1] leading-relaxed">{intel.scaling_outlook}</p>
+                            </div>
+                            <div className="col-span-2 bg-[#13131E] border border-[#1E1E2E] rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <ArrowUpRight className="h-3.5 w-3.5 text-[#6C63FF]" />
+                                    <span className="text-xs font-bold text-[#A0A0C0]">Long-term Recommendation</span>
+                                </div>
+                                <p className="text-xs text-[#cbd5e1] leading-relaxed">{intel.long_term_recommendation}</p>
+                            </div>
+                        </div>
+
+                        {/* Primary Risk Drivers */}
+                        {intel.primary_risk_drivers.length > 0 && (
+                            <div className="bg-[#13131E] border border-[#1E1E2E] rounded-xl p-4">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <ShieldAlert className="h-3.5 w-3.5 text-[#FF4C6A]" />
+                                    <span className="text-xs font-bold text-[#A0A0C0]">Primary Risk Drivers</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {intel.primary_risk_drivers.map((d, i) => (
+                                        <span key={i} className="text-xs font-mono text-[#FF4C6A] bg-[#FF4C6A]/8 border border-[#FF4C6A]/20 rounded-lg px-2.5 py-1">{d}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <p className="text-[10px] font-mono text-[#2A2A3A] text-right">
+                            Intelligence Engine v{intel.engine_version} · analyzed {new Date(intel.analyzed_at).toLocaleString()}
+                        </p>
+                    </div>
+                )}
+
+                {/* ─── Tab Content: Analysis Results ─────────────────────── */}
+                {result && activeTab === 'analysis' && (
+                <div className="space-y-8">
+
                 {/* ─── Semantic Node Sections ─────────────────────────── */}
-                {activeTab === "architecture" && arch && arch.nodes.length > 0 && (
+                {arch && arch.nodes && Array.isArray(arch.nodes) && arch.nodes.length > 0 && (
                     <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]" style={{ animationDelay: '200ms' }}>
                         {Object.entries(groupedNodes).map(([type, nodes]) => {
                             const config = nodeTypeConfig[type] || { label: type, color: "#A0A0C0", icon: Box, badge: type };
@@ -1097,7 +1326,9 @@ export default function ScanResultPage() {
                 )}
 
                 {/* ─── Empty State ─────────────────────────────────────── */}
-                {activeTab === "architecture" && arch && arch.nodes.length === 0 && (!arch.file_structure || arch.file_structure.length === 0) && (
+                {arch &&
+                 (!arch.nodes || !Array.isArray(arch.nodes) || arch.nodes.length === 0) &&
+                 (!arch.file_structure || !Array.isArray(arch.file_structure) || arch.file_structure.length === 0) && (
                     <div className="bg-[#13131E] border border-dashed border-[#1E1E2E] rounded-2xl p-16 text-center reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
                         <Network className="h-12 w-12 text-[#5A5A7A] mx-auto mb-6 opacity-50" />
                         <h3 className="text-xl font-bold text-white mb-3">No Architectural Components Detected</h3>
@@ -1106,6 +1337,9 @@ export default function ScanResultPage() {
                         </p>
                     </div>
                 )}
+
+                </div>
+                )} {/* Close analysis tab content */}
             </div>
 
             <style dangerouslySetInnerHTML={{
