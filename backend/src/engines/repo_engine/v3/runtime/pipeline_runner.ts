@@ -5,7 +5,7 @@ import { checkpoint } from "./checkpoints.js";
 import { runRepoProfiler } from "../profiler/repo_profiler.js";
 import { LazyAstIndexer } from "../parser/ast_indexer.js";
 import { initParser } from "../parser/tree-sitter.js";
-import { Parser } from "web-tree-sitter";
+import Parser from "web-tree-sitter";
 
 // Layer 2
 import { extractRoutePattern } from "../patterns/route.pattern.js";

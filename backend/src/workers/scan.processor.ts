@@ -14,6 +14,7 @@ import {
     Framework,
 } from "../engines/repo_engine/index.js";
 import { runV3Pipeline } from "../engines/repo_engine/v3/public.js";
+import { analyzeArchitecture } from "../engines/intelligence_engine/index.js";
 import "../lib/db.js";
 import { getInstallationOctokit } from "../lib/github.js";
 
@@ -93,6 +94,17 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
         // Execute the full V3 pipeline
         const architecture = await runV3Pipeline(scanId, rootPath, sourceFiles);
 
+        // == STAGE 4: INTELLIGENCE ENGINE ==
+        await ScanModel.updateStage(scanId, "analysing", 90, "Running Intelligence Engine — computing metrics, patterns, and insights...");
+        const intelligence = await analyzeArchitecture({
+            scan_id: scanId,
+            repo_id: `${owner}/${repo}`,
+            framework: primaryFramework,
+            frameworks,
+            graph: architecture,
+        });
+        console.log(`[SandboxedProcessor] Intelligence Engine: risk=${intelligence.overall_risk_level} patterns=${intelligence.detected_patterns.length} insights=${intelligence.insights.length}`);
+
         const endTime = Date.now();
         const durationMs = endTime - startTime;
 
@@ -103,6 +115,7 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
             frameworks,
             status: "completed",
             architecture,
+            intelligence,
             scanned_at: new Date().toISOString(),
             duration_ms: durationMs,
             meta: {
