@@ -23,17 +23,28 @@ export class ScanModel {
     }
 
     /**
-     * Map Engine 1 relation types to Prisma RelationType enum values
+     * Map Engine 1 relation types to Prisma RelationType enum values.
+     * Engine 1 produces: co_location, endpoint_to_service, service_to_db,
+     * endpoint_to_db, worker_to_service, cross_file_import, service_to_external
      */
     private static mapRelationTypeToPrismaEnum(relationType: string): string {
         const typeMap: { [key: string]: string } = {
+            // Legacy / direct matches
             'calls': 'Calls',
             'imports': 'Imports',
             'db_dependency': 'DBDependency',
-            'async_pipeline': 'AsyncPipeline'
+            'async_pipeline': 'AsyncPipeline',
+            // Engine 1 V3 edge types → closest Prisma enum
+            'co_location': 'Calls',
+            'endpoint_to_service': 'Calls',
+            'service_to_db': 'DBDependency',
+            'endpoint_to_db': 'DBDependency',
+            'worker_to_service': 'AsyncPipeline',
+            'cross_file_import': 'Imports',
+            'service_to_external': 'Calls',
         };
 
-        return typeMap[relationType] || 'Calls'; // Default fallback
+        return typeMap[relationType] || 'Calls';
     }
     /**
      * Create a new pending scan job in Prisma
@@ -97,49 +108,59 @@ export class ScanModel {
             const hasNodesAndEdges = 'nodes' in engineResult.architecture && 'edges' in engineResult.architecture;
 
             if (hasNodesAndEdges) {
-                const arch = engineResult.architecture as any; // Type assertion since we checked above
+                const arch = engineResult.architecture as any;
 
-                // Use transaction to ensure atomicity
+                // Use transaction with INCREASED TIMEOUT (default 5s is too short for
+                // bulk inserts over a remote Supabase connection — 47+ nodes + 63+ edges
+                // easily exceeds 5s with individual creates).
                 await prisma.$transaction(async (tx) => {
                     // Clear existing nodes/edges (in case of retry)
                     await tx.architectureEdge.deleteMany({ where: { scanId } });
                     await tx.architectureNode.deleteMany({ where: { scanId } });
 
-                    // Create nodes first
-                    const nodeCreates = arch.nodes.map((node: any) => ({
-                        id: node.id, // Use the semantic ID from Engine 1
-                        scanId,
-                        type: ScanModel.mapNodeTypeToPrismaEnum(node.type), // Map to Prisma enum
-                        name: node.name,
-                        metadata: node // Store full node data
-                    }));
+                    // ── Bulk-insert nodes via createMany ─────────────────────────
+                    // Deduplicate by ID to prevent unique constraint violations
+                    const seenNodeIds = new Set<string>();
+                    const nodeData = arch.nodes
+                        .filter((node: any) => {
+                            if (seenNodeIds.has(node.id)) return false;
+                            seenNodeIds.add(node.id);
+                            return true;
+                        })
+                        .map((node: any) => ({
+                            id: node.id,
+                            scanId,
+                            type: ScanModel.mapNodeTypeToPrismaEnum(node.type) as any,
+                            name: node.name || 'Unknown',
+                            metadata: node,
+                        }));
 
-                    // Insert nodes
-                    for (const nodeData of nodeCreates) {
-                        try {
-                            await tx.architectureNode.create({ data: nodeData });
-                        } catch (nodeError: any) {
-                            console.warn(`[ScanModel] Failed to create node ${nodeData.id} (${nodeData.type}):`, nodeError.message);
-                        }
+                    if (nodeData.length > 0) {
+                        await tx.architectureNode.createMany({
+                            data: nodeData,
+                            skipDuplicates: true,
+                        });
                     }
 
-                    // Create edges (reference nodes by their semantic IDs)
-                    const edgeCreates = arch.edges.map((edge: any, index: number) => ({
-                        id: `${scanId}-edge-${index}`, // Generate unique edge ID
-                        scanId,
-                        fromNodeId: edge.source,
-                        toNodeId: edge.target,
-                        relationType: ScanModel.mapRelationTypeToPrismaEnum(edge.type) // Map to Prisma enum
-                    }));
+                    // ── Bulk-insert edges via createMany ─────────────────────────
+                    // Only include edges whose source AND target nodes exist
+                    const edgeData = arch.edges
+                        .map((edge: any, index: number) => ({
+                            id: `${scanId}-edge-${index}`,
+                            scanId,
+                            fromNodeId: edge.source,
+                            toNodeId: edge.target,
+                            relationType: ScanModel.mapRelationTypeToPrismaEnum(edge.type) as any,
+                        }))
+                        .filter((edge: any) =>
+                            seenNodeIds.has(edge.fromNodeId) && seenNodeIds.has(edge.toNodeId)
+                        );
 
-                    // Insert edges
-                    for (const edgeData of edgeCreates) {
-                        try {
-                            await tx.architectureEdge.create({ data: edgeData });
-                        } catch (edgeError: any) {
-                            console.warn(`[ScanModel] Failed to create edge ${edgeData.fromNodeId} -> ${edgeData.toNodeId}:`, edgeError.message);
-                            // Continue with other edges
-                        }
+                    if (edgeData.length > 0) {
+                        await tx.architectureEdge.createMany({
+                            data: edgeData,
+                            skipDuplicates: true,
+                        });
                     }
 
                     // Update scan status
@@ -153,6 +174,8 @@ export class ScanModel {
                             completedAt: new Date()
                         }
                     });
+                }, {
+                    timeout: 30000, // 30 seconds (default 5s is too short for remote DB)
                 });
 
                 console.log(`[ScanModel] Successfully saved ${arch.nodes.length} nodes and ${arch.edges.length} edges for scan ${scanId}`);
@@ -171,14 +194,14 @@ export class ScanModel {
                 console.log(`[ScanModel] Scan completed with legacy architecture format for scan ${scanId}`);
             }
         } catch (error: any) {
-            console.error(`[ScanModel] Failed to save architecture data:`, error);
+            console.error(`[ScanModel] Failed to save architecture data:`, error.message);
             // Still mark as completed but without nodes/edges
             await prisma.scan.update({
                 where: { id: scanId },
                 data: {
                     status: "completed",
                     progress: 100,
-                    errorMessage: "Scan finished with architecture data issues.",
+                    errorMessage: `Scan finished with architecture data issues: ${error.message}`,
                     rawAst: engineResult as any,
                     completedAt: new Date()
                 }
