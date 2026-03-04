@@ -1,3 +1,4 @@
+import "../env.js"; // ← MUST be first: loads .env before any module reads process.env
 import { Worker } from "bullmq";
 import { redisConnection, SCAN_QUEUE_NAME } from "../queue/index.js";
 

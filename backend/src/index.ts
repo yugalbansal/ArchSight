@@ -1,6 +1,6 @@
+import "./env.js"; // ← MUST be first: loads .env before any module reads process.env
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import { ExpressAuth, getSession } from "@auth/express";
 import { authConfig } from "./lib/auth-config.js";
@@ -13,7 +13,7 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { scanQueue } from "./queue/index.js";
 
-dotenv.config();
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
