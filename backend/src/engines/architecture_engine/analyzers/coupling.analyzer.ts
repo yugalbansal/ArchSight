@@ -1,4 +1,4 @@
-import { ArchitectureGraph } from "./topology.analyzer.js";
+import type { ArchitectureGraph } from "../../../schemas/architecture-graph.schema.js";
 
 export class CouplingAnalyzer {
     /**

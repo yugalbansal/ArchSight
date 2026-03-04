@@ -1,6 +1,7 @@
 import { ArchitectureInsights, VisualizationData } from "../../models/architecture_insight.model.js";
 import { ArchitectureModel } from "../../models/architecture.model.js";
-import { TopologyAnalyzer, ArchitectureGraph } from "./analyzers/topology.analyzer.js";
+import { TopologyAnalyzer } from "./analyzers/topology.analyzer.js";
+import type { ArchitectureGraph } from "../../schemas/architecture-graph.schema.js";
 import { DependencyAnalyzer } from "./analyzers/dependency.analyzer.js";
 import { CouplingAnalyzer } from "./analyzers/coupling.analyzer.js";
 import { DataflowAnalyzer } from "./analyzers/dataflow.analyzer.js";
@@ -34,19 +35,16 @@ export class ArchitectureEngine {
                 id: node.id,
                 type: node.type,
                 name: node.name,
-                metadata: node.metadata
+                file: (node.metadata as any)?.file || "",
+                metadata: node.metadata || {},
+                confidence: (node.metadata as any)?.confidence || 0.5,
             })),
             edges: edges.map(edge => ({
-                id: edge.id,
                 source: edge.fromNodeId,
                 target: edge.toNodeId,
-                type: edge.relationType
+                type: edge.relationType as any,
             })),
-            metadata: {
-                totalFiles: nodes.length,
-                languages: this.extractLanguages(nodes),
-                repositorySize: nodes.length
-            }
+            file_structure: [],  // Not available from DB rows
         };
     }
 

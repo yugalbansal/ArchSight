@@ -46,30 +46,30 @@ router.get("/:scanId", async (req, res) => {
         const { scanId } = req.params;
         const { prisma } = await import("../lib/db.js");
 
-        // Always load the scan with its raw architecture data (source of truth)
+        // Load the scan with its architecture nodes, edges, and analysis from the DB tables (single source of truth)
         const scanData = await prisma.scan.findUnique({
             where: { id: scanId },
-            include: { architectureAnalysis: true }
+            include: {
+                nodes: true,
+                edges: true,
+                architectureAnalysis: true,
+            }
         });
 
         if (!scanData) {
             return res.status(404).json({ error: "Scan not found" });
         }
 
-        // Extract V3 architecture from rawAst (the actual engine output)
-        const rawAst = scanData.rawAst as any;
-        const archFromRawAst = rawAst?.architecture;
-
-        if (!archFromRawAst || !Array.isArray(archFromRawAst.nodes) || archFromRawAst.nodes.length === 0) {
+        if (!scanData.nodes || scanData.nodes.length === 0) {
             return res.status(404).json({
                 error: "Architecture analysis not found for this scan"
             });
         }
 
-        // Generate visualization directly from the V3 node/edge data in rawAst
+        // Generate visualization directly from DB node/edge rows
         const visualization = architectureEngine.generateVisualizationFromNodes(
-            archFromRawAst.nodes,
-            archFromRawAst.edges || []
+            scanData.nodes,
+            scanData.edges || []
         );
 
         // Include Engine 2 insights if available (richer metadata)

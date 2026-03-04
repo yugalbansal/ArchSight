@@ -1,5 +1,5 @@
 import { ArchitectureInsights, ServiceInsight, ArchitectureMetrics } from "../../../models/architecture_insight.model.js";
-import { ArchitectureGraph } from "../analyzers/topology.analyzer.js";
+import type { ArchitectureGraph } from "../../../schemas/architecture-graph.schema.js";
 
 interface AnalysisResults {
     topology: {

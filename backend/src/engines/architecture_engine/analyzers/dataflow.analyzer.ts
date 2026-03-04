@@ -1,4 +1,4 @@
-import { ArchitectureGraph } from "./topology.analyzer.js";
+import type { ArchitectureGraph } from "../../../schemas/architecture-graph.schema.js";
 import { DataflowInsight } from "../../../models/architecture_insight.model.js";
 
 export class DataflowAnalyzer {
@@ -116,7 +116,7 @@ export class DataflowAnalyzer {
     private pathHasAsyncEdges(path: string[], graph: ArchitectureGraph): boolean {
         for (let i = 0; i < path.length - 1; i++) {
             const edge = graph.edges.find(e => e.source === path[i] && e.target === path[i + 1]);
-            if (edge?.type === 'AsyncPipeline') {
+            if ((edge?.type as string) === 'AsyncPipeline' || edge?.type === 'worker_to_service') {
                 return true;
             }
         }
@@ -179,7 +179,7 @@ export class DataflowAnalyzer {
         const asyncFlows: DataflowInsight[] = [];
 
         // Find all async edges
-        const asyncEdges = graph.edges.filter(e => e.type === 'AsyncPipeline');
+        const asyncEdges = graph.edges.filter(e => (e.type as string) === 'AsyncPipeline' || e.type === 'worker_to_service');
 
         asyncEdges.forEach(edge => {
             // Build flow around async edge

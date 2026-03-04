@@ -1,32 +1,9 @@
-import { ArchitectureNode, ArchitectureEdge } from "@prisma/client";
-
-// Interface for Engine 1 output (ArchitectureGraph)
-export interface ArchitectureGraph {
-    nodes: ArchitectureGraphNode[];
-    edges: ArchitectureGraphEdge[];
-    metadata: GraphMetadata;
-}
-
-export interface ArchitectureGraphNode {
-    id: string;
-    type: string;
-    name: string;
-    metadata?: any;
-}
-
-export interface ArchitectureGraphEdge {
-    id: string;
-    source: string;
-    target: string;
-    type: string;
-}
-
-export interface GraphMetadata {
-    totalFiles: number;
-    languages: string[];
-    framework?: string;
-    repositorySize: number;
-}
+import type {
+    ArchitectureGraph,
+    ArchitectureNode,
+    ArchitectureEdge,
+    FileStructureEntry,
+} from "../../../schemas/architecture-graph.schema.js";
 
 export class TopologyAnalyzer {
     /**
@@ -103,13 +80,10 @@ export class TopologyAnalyzer {
     detectStack(graph: ArchitectureGraph): string[] {
         const stack: string[] = [];
 
-        // From metadata
-        if (graph.metadata.languages) {
-            stack.push(...graph.metadata.languages);
-        }
-
-        if (graph.metadata.framework) {
-            stack.push(graph.metadata.framework);
+        // Derive languages from file_structure entries
+        if (graph.file_structure) {
+            const langs = new Set(graph.file_structure.map(f => f.language));
+            langs.forEach(l => { if (l && !stack.includes(l)) stack.push(l); });
         }
 
         // From node analysis
@@ -178,13 +152,13 @@ export class TopologyAnalyzer {
     }
 
     private hasDistributedCommunication(graph: ArchitectureGraph): boolean {
-        // Check for async communication patterns
+        // Check for async communication patterns (both old Prisma enum names and canonical EdgeType)
         return graph.edges.some(edge =>
-            edge.type === 'AsyncPipeline' || edge.type === 'Queue'
+            edge.type === 'worker_to_service' || edge.type === 'service_to_external' || (edge.type as string) === 'AsyncPipeline' || (edge.type as string) === 'Queue'
         );
     }
 
-    private determineNodeLayer(node: ArchitectureGraphNode): string {
+    private determineNodeLayer(node: ArchitectureNode): string {
         switch (node.type) {
             case 'API':
             case 'Client':

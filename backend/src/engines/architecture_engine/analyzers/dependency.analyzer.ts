@@ -1,4 +1,4 @@
-import { ArchitectureGraph, ArchitectureGraphNode } from "./topology.analyzer.js";
+import type { ArchitectureGraph, ArchitectureNode } from "../../../schemas/architecture-graph.schema.js";
 import { DependencyInsight } from "../../../models/architecture_insight.model.js";
 
 export class DependencyAnalyzer {
