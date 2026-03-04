@@ -13,6 +13,14 @@ export { runV3Pipeline as analyzeRepository } from "./v3/public.js";
 // ─── Schemas ─────────────────────────────────────────────────────────
 export * from "./schemas/architecture.schema.js";
 
+// ─── Canonical Graph Types (shared across all engines) ───────────────
+export type {
+    ArchitectureGraph,
+    ArchitectureNode,
+    ArchitectureEdge,
+    FileStructureEntry,
+} from "../../schemas/architecture-graph.schema.js";
+
 // ─── Repository Acquisition ──────────────────────────────────────────
 export { cloneRepositoryEphemeral } from "./repo_source/clone.js";
 export type { CloneResult } from "./repo_source/clone.js";

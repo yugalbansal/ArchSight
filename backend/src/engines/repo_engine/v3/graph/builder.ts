@@ -1,34 +1,20 @@
 import { ScanContext } from "../core/scan_context.js";
 
-export interface ArchitectureNode {
-    id: string;
-    type: string;
-    name: string;
-    file: string;
-    metadata: Record<string, any>;
-    confidence: number;
-}
+// ─── Canonical types from shared schema ──────────────────────────────
+// Re-exported so that existing imports (`from "…/graph/builder.js"`) keep working.
+export type {
+    ArchitectureNode,
+    ArchitectureEdge,
+    FileStructureEntry,
+    ArchitectureGraph,
+} from "../../../../schemas/architecture-graph.schema.js";
 
-export interface ArchitectureEdge {
-    source: string;
-    target: string;
-    type: "co_location" | "endpoint_to_service" | "service_to_db" | "endpoint_to_db" | "worker_to_service" | "cross_file_import" | "service_to_external";
-}
-
-export interface FileStructureEntry {
-    file: string;
-    language: string;
-    functions: string[];
-    classes: string[];
-    imports: string[];
-    exports: string[];
-}
-
-export interface ArchitectureGraph {
-    nodes: ArchitectureNode[];
-    edges: ArchitectureEdge[];
-    file_structure: FileStructureEntry[];
-}
+import type {
+    ArchitectureNode,
+    ArchitectureEdge,
+    FileStructureEntry,
+    ArchitectureGraph,
+} from "../../../../schemas/architecture-graph.schema.js";
 
 /**
  * Graph Builder — builds nodes AND edges from the semantic context.

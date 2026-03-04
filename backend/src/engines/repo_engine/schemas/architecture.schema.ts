@@ -114,7 +114,7 @@ export interface ExtractedArchitecture {
 
 // ─── Engine Scan Result ──────────────────────────────────────────────
 
-import { ArchitectureGraph } from "../v3/graph/builder.js";
+import { ArchitectureGraph } from "../../../schemas/architecture-graph.schema.js";
 import type { IntelligenceOutput } from "../../intelligence_engine/schemas.js";
 
 export interface EngineScanResult {
