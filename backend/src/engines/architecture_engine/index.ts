@@ -85,6 +85,20 @@ export class ArchitectureEngine {
         return insights;
     }
 
+    /**
+     * Check if architecture analysis already exists for a scan
+     */
+    async hasAnalysis(scanId: string): Promise<boolean> {
+        return ArchitectureModel.existsForScan(scanId);
+    }
+
+    /**
+     * Get a summary of architecture analyses for a user (for dashboard listing)
+     */
+    async getAnalysisSummary(userId: string) {
+        return ArchitectureModel.getByUserId(userId);
+    }
+
     private async getScanData(scanId: string) {
         const { prisma } = await import("../../lib/db.js");
 
@@ -435,16 +449,30 @@ export class ArchitectureEngine {
     }
 
     private mapNodeToSemanticType(nodeType: string): string {
-        const typeMap = {
+        const typeMap: Record<string, string> = {
+            // Prisma enum types (stored in architectureNode.type)
             'API': 'endpoint',
             'Service': 'service',
             'DB': 'database',
             'ExternalAPI': 'external',
             'Worker': 'worker',
             'Queue': 'queue',
-            'Client': 'client'
+            'Client': 'client',
+            'LLM': 'service',
+            // V3 Engine 1 semantic types (stored in rawAst.architecture.nodes[].type)
+            'http_endpoint': 'endpoint',
+            'db_operation': 'database',
+            'business_logic_service': 'service',
+            'external_service': 'external',
+            'queue_worker': 'worker',
+            'message_consumer': 'worker',
+            'message_publisher': 'worker',
+            'message_processor': 'worker',
+            'llm': 'service',
+            'client': 'client',
+            'queue': 'queue',
         };
-        return typeMap[nodeType as keyof typeof typeMap] || 'service';
+        return typeMap[nodeType] || 'service';
     }
 
     private calculateLayeredPosition(category: string, index: number, totalNodes: number) {

@@ -329,7 +329,7 @@ export default function ScanResultPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
-    const [activeTab, setActiveTab] = useState<'analysis' | 'architecture' | 'intelligence'>('analysis');
+    const [activeTab, setActiveTab] = useState<'codescan' | 'archmap' | 'risksight'>('codescan');
 
     useEffect(() => {
         if (!session?.user || !id) return;
@@ -560,43 +560,51 @@ export default function ScanResultPage() {
                 {result && (
                     <div className="border-b border-[#1E1E2E]">
                         <nav className="-mb-px flex space-x-8">
+                            {/* Tab 1 ── CodeScan */}
                             <button
-                                onClick={() => setActiveTab('analysis')}
+                                onClick={() => setActiveTab('codescan')}
                                 className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                                    activeTab === 'analysis'
+                                    activeTab === 'codescan'
                                         ? 'border-[#6C63FF] text-[#6C63FF]'
                                         : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
                                 }`}
                             >
                                 <span className="flex items-center gap-2">
                                     <Network className="h-4 w-4" />
-                                    Semantic Analysis
+                                    <span>CodeScan</span>
+                                    <span className="text-[10px] font-mono opacity-50">Semantic Engine</span>
                                 </span>
                             </button>
+
+                            {/* Tab 2 ── ArchMap */}
                             <button
-                                onClick={() => setActiveTab('architecture')}
+                                onClick={() => setActiveTab('archmap')}
                                 className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                                    activeTab === 'architecture'
+                                    activeTab === 'archmap'
                                         ? 'border-[#00D4FF] text-[#00D4FF]'
                                         : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
                                 }`}
                             >
                                 <span className="flex items-center gap-2">
-                                    <Layers className="h-4 w-4" />
-                                    Architecture Diagram
+                                    <GitFork className="h-4 w-4" />
+                                    <span>ArchMap</span>
+                                    <span className="text-[10px] font-mono opacity-50">Dependency Graph</span>
                                 </span>
                             </button>
+
+                            {/* Tab 3 ── RiskSight */}
                             <button
-                                onClick={() => setActiveTab('intelligence')}
+                                onClick={() => setActiveTab('risksight')}
                                 className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
-                                    activeTab === 'intelligence'
+                                    activeTab === 'risksight'
                                         ? 'border-[#A855F7] text-[#A855F7]'
                                         : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
                                 }`}
                             >
                                 <span className="flex items-center gap-2">
                                     <ShieldAlert className="h-4 w-4" />
-                                    Intelligence Engine
+                                    <span>RiskSight</span>
+                                    <span className="text-[10px] font-mono opacity-50">Intelligence Engine</span>
                                     {intel && (
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono border ${
                                             intel.overall_risk_level === 'critical' ? 'bg-[#FF2D55]/10 text-[#FF2D55] border-[#FF2D55]/30' :
@@ -613,15 +621,15 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
-                {/* ─── Tab Content: Architecture Diagram ─────────────────── */}
-                {result && activeTab === 'architecture' && (
+                {/* ─── Tab Content: ArchMap — Dependency Graph ──────────── */}
+                {result && activeTab === 'archmap' && (
                     <div className="reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
                         <ArchitectureDiagram scanId={id} />
                     </div>
                 )}
 
-                {/* ─── Tab Content: Intelligence Engine ──────────────────── */}
-                {result && activeTab === 'intelligence' && intel && (
+                {/* ─── Tab Content: RiskSight — Intelligence Engine ─────── */}
+                {result && activeTab === 'risksight' && intel && (
                     <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
 
                         {/* Risk Banner */}
@@ -809,8 +817,8 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
-                {/* ─── Tab Content: Analysis Results ─────────────────────── */}
-                {result && activeTab === 'analysis' && (
+                {/* ─── Tab Content: CodeScan — Semantic Engine ─────────── */}
+                {result && activeTab === 'codescan' && (
                 <div className="space-y-8">
 
                 {/* ─── Semantic Node Sections ─────────────────────────── */}
@@ -914,7 +922,7 @@ export default function ScanResultPage() {
                 )}
 
                 {/* ─── AST File Structure ─────────────────────────────── */}
-                {activeTab === "architecture" && arch && arch.file_structure && arch.file_structure.length > 0 && (
+                {arch && arch.file_structure && arch.file_structure.length > 0 && (
                     <div className="bg-[#040408] rounded-2xl border border-[#1E1E2E] overflow-hidden flex flex-col shadow-2xl reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]" style={{ animationDelay: '400ms' }}>
                         <button
                             onClick={() => toggleSection("file_structure")}
@@ -1044,286 +1052,7 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
-                {/* ─── Intelligence Panel ──────────────────────────────── */}
-                {activeTab === "intelligence" && intel && (
-                    <div className="space-y-6 animate-[fadeInUp_0.4s_ease-out_forwards]">
 
-                        {/* ── Risk Overview Header ─────────────────────── */}
-                        <div className={`relative rounded-2xl border p-6 overflow-hidden ${riskConfig[intel.overall_risk_level].border} ${riskConfig[intel.overall_risk_level].glow}`}
-                            style={{ background: `linear-gradient(135deg, ${riskConfig[intel.overall_risk_level].color}08 0%, #0A0A0F 60%)` }}>
-                            <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at top right, ${riskConfig[intel.overall_risk_level].color}10 0%, transparent 60%)` }} />
-                            <div className="relative z-10 flex flex-col md:flex-row gap-6 items-start md:items-center">
-                                {/* Risk Gauge */}
-                                <div className="shrink-0">
-                                    <RiskGauge score={intel.metrics.risk_score} />
-                                </div>
-                                {/* Theme + Risk Level */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex flex-wrap items-center gap-3 mb-2">
-                                        <h2 className="text-xl font-bold text-white">{intel.architectural_theme}</h2>
-                                        <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${riskConfig[intel.overall_risk_level].bg} ${riskConfig[intel.overall_risk_level].border}`}
-                                            style={{ color: riskConfig[intel.overall_risk_level].color }}>
-                                            {riskConfig[intel.overall_risk_level].label}
-                                        </span>
-                                        <span className="text-[10px] font-mono text-[#5A5A7A] border border-[#1E1E2E] bg-[#13131E] px-2 py-1 rounded-full">
-                                            Confidence: {intel.confidence_level.replace("_", " ")}
-                                        </span>
-                                    </div>
-                                    {/* Primary Risk Drivers */}
-                                    <div className="flex flex-wrap gap-1.5 mt-3">
-                                        {intel.primary_risk_drivers.map((d, i) => (
-                                            <span key={i} className="text-[11px] font-mono text-[#A0A0C0] bg-[#13131E] border border-[#1E1E2E] px-2.5 py-1 rounded-lg">
-                                                {d}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                                {/* Engine Info */}
-                                <div className="shrink-0 text-right hidden md:block">
-                                    <p className="text-[10px] font-mono text-[#5A5A7A]">Engine v{intel.engine_version}</p>
-                                    <p className="text-[10px] font-mono text-[#5A5A7A]">{new Date(intel.analyzed_at).toLocaleString()}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* ── Graph Metrics Dashboard ──────────────────── */}
-                        <div className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-2xl overflow-hidden">
-                            <div className="px-5 py-3 border-b border-[#1E1E2E] bg-[#0D0D14] flex items-center gap-2">
-                                <BarChart3 className="h-4 w-4 text-[#6C63FF]" />
-                                <span className="text-sm font-bold text-white">Graph Metrics</span>
-                                <span className="text-xs font-mono text-[#5A5A7A] ml-auto">{intel.metrics.total_nodes} nodes · {intel.metrics.total_edges} edges</span>
-                            </div>
-                            <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-5">
-                                {[
-                                    { label: "Risk Score",       value: intel.metrics.risk_score,                       max: 100,  color: intel.metrics.risk_score >= 70 ? "#FF4C6A" : intel.metrics.risk_score >= 50 ? "#FF6B35" : "#F59E0B", display: String(intel.metrics.risk_score) },
-                                    { label: "Density",          value: intel.metrics.density * 100,                    max: 100,  color: "#A855F7", display: `${(intel.metrics.density * 100).toFixed(1)}%` },
-                                    { label: "Coupling Score",   value: intel.metrics.coupling_score,                   max: 30,   color: "#FF6B35", display: intel.metrics.coupling_score.toFixed(1) },
-                                    { label: "Avg Instability",  value: intel.metrics.avg_instability * 100,            max: 100,  color: "#F59E0B", display: `${(intel.metrics.avg_instability * 100).toFixed(0)}%` },
-                                    { label: "Max Depth",        value: intel.metrics.max_depth,                        max: 10,   color: "#00D4FF", display: String(intel.metrics.max_depth) },
-                                    { label: "Cycles",           value: intel.metrics.cycles_detected,                  max: Math.max(1, intel.metrics.cycles_detected), color: intel.metrics.cycles_detected > 0 ? "#FF4C6A" : "#22C55E", display: String(intel.metrics.cycles_detected) },
-                                    { label: "SCC Count",        value: intel.metrics.strongly_connected_components,    max: Math.max(1, intel.metrics.strongly_connected_components), color: "#6C63FF", display: String(intel.metrics.strongly_connected_components) },
-                                    { label: "Avg Fan-In",       value: intel.metrics.avg_fan_in,                       max: 10,   color: "#22C55E", display: intel.metrics.avg_fan_in.toFixed(1) },
-                                ].map(m => (
-                                    <div key={m.label} className="space-y-2">
-                                        <div className="flex justify-between items-baseline">
-                                            <span className="text-[11px] text-[#5A5A7A] font-mono uppercase tracking-wide">{m.label}</span>
-                                            <span className="text-sm font-bold font-mono" style={{ color: m.color }}>{m.display}</span>
-                                        </div>
-                                        <MetricBar value={m.value} max={m.max} color={m.color} />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* ── Two-Column: Patterns + Strategic Guidance ─── */}
-                        <div className="grid md:grid-cols-2 gap-6">
-
-                            {/* ─ Detected Patterns ─────────────────────── */}
-                            <div className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-2xl overflow-hidden">
-                                <div className="px-5 py-3 border-b border-[#1E1E2E] bg-[#0D0D14] flex items-center gap-2">
-                                    <ShieldAlert className="h-4 w-4 text-[#FF4C6A]" />
-                                    <span className="text-sm font-bold text-white">Detected Patterns</span>
-                                    <Badge variant="outline" className="ml-auto font-mono text-[10px] bg-[#FF4C6A]/10 text-[#FF4C6A] border-[#FF4C6A]/30">
-                                        {intel.detected_patterns.length} Found
-                                    </Badge>
-                                </div>
-                                <div className="divide-y divide-[#1E1E2E]">
-                                    {intel.detected_patterns.length === 0 ? (
-                                        <div className="p-8 text-center">
-                                            <CheckCircle2 className="h-8 w-8 text-[#22C55E] mx-auto mb-2" />
-                                            <p className="text-sm text-[#A0A0C0]">No architectural patterns detected.</p>
-                                        </div>
-                                    ) : intel.detected_patterns.map((p, i) => {
-                                        const PatternIcon = patternTypeIcons[p.type] || ShieldAlert;
-                                        const sc = severityConfig[p.severity];
-                                        const key = `pattern-${i}`;
-                                        const isOpen = expandedPattern === key;
-                                        return (
-                                            <div key={key} className={`${sc.bg} transition-colors`}>
-                                                <button
-                                                    onClick={() => setExpandedPattern(isOpen ? null : key)}
-                                                    className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
-                                                >
-                                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: `${sc.color}20`, border: `1px solid ${sc.color}30` }}>
-                                                        <PatternIcon className="h-3.5 w-3.5" style={{ color: sc.color }} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="text-sm font-semibold text-white">{patternTypeLabels[p.type] || p.type}</span>
-                                                            <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border" style={{ color: sc.color, backgroundColor: `${sc.color}15`, borderColor: `${sc.color}30` }}>
-                                                                {p.severity}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-xs text-[#5A5A7A] mt-0.5 line-clamp-1">{p.description}</p>
-                                                    </div>
-                                                    {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-[#5A5A7A] shrink-0 mt-1" /> : <ChevronRight className="h-3.5 w-3.5 text-[#5A5A7A] shrink-0 mt-1" />}
-                                                </button>
-                                                {isOpen && (
-                                                    <div className="px-4 pb-4 pt-0 ml-10 space-y-3">
-                                                        <p className="text-xs text-[#A0A0C0] leading-relaxed">{p.description}</p>
-                                                        {p.affected_node_ids.length > 0 && (
-                                                            <div>
-                                                                <p className="text-[10px] text-[#5A5A7A] uppercase font-bold tracking-wider mb-1.5">Affected Nodes</p>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {p.affected_node_ids.slice(0, 6).map((nid, j) => (
-                                                                        <span key={j} className="text-[10px] font-mono bg-[#13131E] border border-[#1E1E2E] text-[#A0A0C0] px-2 py-0.5 rounded truncate max-w-[160px]">{nid}</span>
-                                                                    ))}
-                                                                    {p.affected_node_ids.length > 6 && <span className="text-[10px] text-[#5A5A7A] italic">+{p.affected_node_ids.length - 6} more</span>}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                        {Object.keys(p.evidence).length > 0 && (
-                                                            <div>
-                                                                <p className="text-[10px] text-[#5A5A7A] uppercase font-bold tracking-wider mb-1.5">Evidence</p>
-                                                                <div className="grid grid-cols-2 gap-1.5">
-                                                                    {Object.entries(p.evidence).map(([k, v]) => (
-                                                                        <div key={k} className="flex justify-between bg-[#0A0A0F] border border-[#1E1E2E] rounded px-2 py-1">
-                                                                            <span className="text-[10px] font-mono text-[#5A5A7A]">{k}</span>
-                                                                            <span className="text-[10px] font-mono text-[#A0A0C0]">{String(v)}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {/* ─ Strategic Guidance ────────────────────── */}
-                            <div className="flex flex-col gap-4">
-                                {[
-                                    { label: "Refactor Strategy",       icon: Target,      color: "#A855F7", text: intel.refactor_strategy },
-                                    { label: "Scaling Outlook",         icon: TrendingUp,  color: "#00D4FF", text: intel.scaling_outlook },
-                                    { label: "Long-Term Recommendation", icon: ArrowUpRight, color: "#22C55E", text: intel.long_term_recommendation },
-                                ].map(card => {
-                                    const CardIcon = card.icon;
-                                    return (
-                                        <div key={card.label} className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-2xl p-5 flex-1 relative overflow-hidden group hover:border-opacity-50 transition-colors"
-                                            style={{ borderColor: `${card.color}25` }}>
-                                            <div className="absolute top-0 right-0 w-20 h-20 rounded-bl-full opacity-[0.04]" style={{ backgroundColor: card.color }} />
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${card.color}15`, border: `1px solid ${card.color}25` }}>
-                                                    <CardIcon className="h-3.5 w-3.5" style={{ color: card.color }} />
-                                                </div>
-                                                <span className="text-xs font-bold text-[#5A5A7A] uppercase tracking-wider">{card.label}</span>
-                                            </div>
-                                            <p className="text-sm text-[#A0A0C0] leading-relaxed">{card.text}</p>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* ── Insights List ─────────────────────────────── */}
-                        <div className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-2xl overflow-hidden">
-                            <div className="px-5 py-3 border-b border-[#1E1E2E] bg-[#0D0D14] flex items-center gap-2">
-                                <Lightbulb className="h-4 w-4 text-[#F59E0B]" />
-                                <span className="text-sm font-bold text-white">Actionable Insights</span>
-                                <span className="ml-auto text-xs font-mono text-[#5A5A7A]">{intel.insights.length} items</span>
-                            </div>
-                            <div className="divide-y divide-[#1E1E2E]">
-                                {intel.insights.length === 0 ? (
-                                    <div className="p-8 text-center">
-                                        <CheckCircle2 className="h-8 w-8 text-[#22C55E] mx-auto mb-2" />
-                                        <p className="text-sm text-[#A0A0C0]">Architecture looks clean — no critical insights.</p>
-                                    </div>
-                                ) : intel.insights.map((ins) => {
-                                    const sc = severityConfig[ins.severity];
-                                    const cc = categoryConfig[ins.category] || { color: "#A0A0C0", icon: Lightbulb };
-                                    const CatIcon = cc.icon;
-                                    const isOpen = expandedInsight === ins.id;
-                                    return (
-                                        <div key={ins.id} className="group">
-                                            <button
-                                                onClick={() => setExpandedInsight(isOpen ? null : ins.id)}
-                                                className="w-full flex items-start gap-4 px-5 py-4 hover:bg-[#13131E]/50 transition-colors text-left"
-                                            >
-                                                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: `${cc.color}15`, border: `1px solid ${cc.color}25` }}>
-                                                    <CatIcon className="h-4 w-4" style={{ color: cc.color }} />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                        <span className="text-sm font-semibold text-white">{ins.title}</span>
-                                                        <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border" style={{ color: sc.color, backgroundColor: `${sc.color}15`, borderColor: `${sc.color}30` }}>{ins.severity}</span>
-                                                        <span className="text-[10px] capitalize text-[#5A5A7A] font-mono bg-[#13131E] border border-[#1E1E2E] px-2 py-0.5 rounded">{ins.category}</span>
-                                                    </div>
-                                                    <p className="text-xs text-[#5A5A7A] line-clamp-1">{ins.description}</p>
-                                                </div>
-                                                <div className="shrink-0 flex items-center gap-2 mt-1">
-                                                    <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
-                                                    {isOpen ? <ChevronDown className="h-4 w-4 text-[#5A5A7A]" /> : <ChevronRight className="h-4 w-4 text-[#5A5A7A]" />}
-                                                </div>
-                                            </button>
-                                            {isOpen && (
-                                                <div className="px-5 pb-5 pt-1 ml-12 space-y-4">
-                                                    <p className="text-sm text-[#A0A0C0] leading-relaxed">{ins.description}</p>
-                                                    <div className="bg-[#13131E] border rounded-xl p-4" style={{ borderColor: `${cc.color}20` }}>
-                                                        <p className="text-[11px] uppercase font-bold tracking-wider mb-2" style={{ color: cc.color }}>Recommendation</p>
-                                                        <p className="text-sm text-[#A0A0C0] leading-relaxed">{ins.recommendation}</p>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-3">
-                                                        <div>
-                                                            <p className="text-[10px] uppercase font-bold text-[#5A5A7A] tracking-wider mb-1.5">Triggered By</p>
-                                                            <span className="text-[11px] font-mono bg-[#0A0A0F] border border-[#1E1E2E] text-[#A0A0C0] px-2.5 py-1 rounded-lg">{ins.triggered_by}</span>
-                                                        </div>
-                                                        {ins.affected_nodes.length > 0 && (
-                                                            <div>
-                                                                <p className="text-[10px] uppercase font-bold text-[#5A5A7A] tracking-wider mb-1.5">Affected Nodes</p>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {ins.affected_nodes.slice(0, 4).map((n, j) => (
-                                                                        <span key={j} className="text-[10px] font-mono bg-[#0A0A0F] border border-[#1E1E2E] text-[#A0A0C0] px-2 py-0.5 rounded truncate max-w-[160px]">{n}</span>
-                                                                    ))}
-                                                                    {ins.affected_nodes.length > 4 && <span className="text-[10px] text-[#5A5A7A] italic">+{ins.affected_nodes.length - 4} more</span>}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* ── Priority Order ─────────────────────────────── */}
-                        {intel.priority_order.length > 0 && (
-                            <div className="bg-[#0A0A0F] border border-[#1E1E2E] rounded-2xl overflow-hidden">
-                                <div className="px-5 py-3 border-b border-[#1E1E2E] bg-[#0D0D14] flex items-center gap-2">
-                                    <Target className="h-4 w-4 text-[#FF4C6A]" />
-                                    <span className="text-sm font-bold text-white">Intervention Priority Queue</span>
-                                    <span className="ml-auto text-[10px] font-mono text-[#5A5A7A]">Highest impact first</span>
-                                </div>
-                                <div className="p-5 flex flex-wrap gap-2">
-                                    {intel.priority_order.map((nodeId, i) => (
-                                        <div key={i} className="flex items-center gap-2 bg-[#13131E] border border-[#1E1E2E] rounded-xl px-3 py-2 group hover:border-[#FF4C6A]/30 transition-colors">
-                                            <span className="text-[10px] font-bold font-mono w-5 text-center rounded-full" style={{ color: i === 0 ? "#FF4C6A" : i < 3 ? "#FF6B35" : "#5A5A7A" }}>
-                                                #{i + 1}
-                                            </span>
-                                            <span className="text-xs font-mono text-[#A0A0C0] group-hover:text-white transition-colors truncate max-w-[200px]">{nodeId}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ─── Intelligence Not Yet Available ──────────────────── */}
-                {activeTab === "intelligence" && !intel && scan.status === "completed" && (
-                    <div className="bg-[#13131E] border border-dashed border-[#1E1E2E] rounded-2xl p-16 text-center">
-                        <ShieldAlert className="h-12 w-12 text-[#5A5A7A] mx-auto mb-6 opacity-50" />
-                        <h3 className="text-xl font-bold text-white mb-3">Intelligence Not Available</h3>
-                        <p className="text-[#A0A0C0] max-w-lg mx-auto text-sm leading-relaxed">
-                            This scan was completed before the Intelligence Engine was deployed.
-                            Re-run the scan to generate insights, risk analysis, and architectural patterns.
-                        </p>
-                    </div>
-                )}
 
                 {/* ─── Empty State ─────────────────────────────────────── */}
                 {arch &&
@@ -1339,7 +1068,7 @@ export default function ScanResultPage() {
                 )}
 
                 </div>
-                )} {/* Close analysis tab content */}
+                )} {/* Close codescan tab content */}
             </div>
 
             <style dangerouslySetInnerHTML={{

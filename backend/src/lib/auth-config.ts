@@ -4,9 +4,9 @@ import Credentials from "@auth/express/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db.js";
-import type { AuthConfig } from "@auth/core";
+import type { ExpressAuthConfig } from "@auth/express";
 
-export const authConfig: AuthConfig = {
+export const authConfig: ExpressAuthConfig = {
     adapter: PrismaAdapter(prisma),
     session: { strategy: "jwt" },
     providers: [
@@ -58,13 +58,15 @@ export const authConfig: AuthConfig = {
         }),
     ],
     callbacks: {
-        async jwt({ token, user }) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async jwt({ token, user }: { token: any; user?: any }) {
             if (user) {
                 token.id = user.id;
             }
             return token;
         },
-        async session({ session, token }) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async session({ session, token }: { session: any; token: any }) {
             if (session.user && token.id) {
                 session.user.id = token.id as string;
             }

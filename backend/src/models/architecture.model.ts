@@ -87,7 +87,7 @@ export class ArchitectureModel {
         });
 
         return analyses.map(analysis => {
-            const insights = analysis.insights as ArchitectureInsights;
+            const insights = analysis.insights as unknown as ArchitectureInsights;
             return {
                 id: analysis.id,
                 scanId: analysis.scanId,
