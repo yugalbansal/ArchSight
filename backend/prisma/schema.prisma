@@ -140,10 +140,11 @@ model Scan {
   errorMessage String?
   rawAst       Json?      // Stores the full ExtractedArchitecture JSONB if needed
   
-  repository           Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  nodes                ArchitectureNode[]
-  edges                ArchitectureEdge[]
-  architectureAnalysis ArchitectureAnalysis?
+  repository            Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  nodes                 ArchitectureNode[]
+  edges                 ArchitectureEdge[]
+  architectureAnalysis  ArchitectureAnalysis?
+  intelligenceAnalysis  IntelligenceAnalysis?
 
   @@index([repositoryId])
   @@index([status])
@@ -190,5 +191,24 @@ model ArchitectureAnalysis {
   updatedAt DateTime @updatedAt
 
   @@map("architecture_analyses")
+}
+
+model IntelligenceAnalysis {
+  id         String   @id @default(cuid())
+  scanId     String   @unique
+  scan       Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  riskLevel  String
+  confidence String
+  theme      String
+  metrics    Json
+  patterns   Json
+  insights   Json
+  strategy   Json
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("intelligence_analyses")
 }
 

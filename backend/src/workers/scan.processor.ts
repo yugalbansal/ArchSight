@@ -4,6 +4,7 @@ import path from "path";
 // Important: Note that this file gets executed in a completely new Node.js context (child_process)
 // Dependencies must be imported freshly in this isolated environment.
 import { ScanModel } from "../models/scan.model.js";
+import { IntelligenceModel } from "../models/intelligence.model.js";
 import {
     cloneRepositoryEphemeral,
     detectFrameworks,
@@ -104,6 +105,15 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
             graph: architecture,
         });
         console.log(`[SandboxedProcessor] Intelligence Engine: risk=${intelligence.overall_risk_level} patterns=${intelligence.detected_patterns.length} insights=${intelligence.insights.length}`);
+
+        // Save intelligence output to its dedicated table (indexed, queryable)
+        try {
+            await IntelligenceModel.saveAnalysis(scanId, intelligence);
+            console.log(`[SandboxedProcessor] Intelligence analysis saved to DB for scan ${scanId}`);
+        } catch (intErr: any) {
+            console.error(`[SandboxedProcessor] Failed to save intelligence to DB (non-critical):`, intErr.message);
+            // Don't fail the job — intelligence is also in rawAst as fallback
+        }
 
         const endTime = Date.now();
         const durationMs = endTime - startTime;
