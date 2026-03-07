@@ -147,8 +147,9 @@ export default async function (job: Job<ScanJobData>): Promise<EngineScanResult>
             await architectureEngine.analyzeAndSave(scanId);
             console.log(`[SandboxedProcessor] Engine 2 analysis completed for scan ${scanId}`);
         } catch (archError: any) {
-            console.error(`[SandboxedProcessor] Engine 2 analysis failed (non-critical):`, archError.message);
-            // Don't fail the entire job if architecture analysis fails
+            console.error(`[SandboxedProcessor] Engine 2 analysis failed (non-critical):`, archError);
+            // Inform user that the analysis failed but keep it completed
+            await ScanModel.updateStage(scanId, "completed", 100, "Scan finished, but Architecture Framework Analysis failed.");
         }
 
         return engineResult;

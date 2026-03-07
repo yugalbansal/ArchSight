@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-export type ScanStatus = "pending" | "cloning" | "detecting" | "parsing" | "extracting" | "completed" | "failed";
+export type ScanStatus = "pending" | "cloning" | "detecting" | "parsing" | "extracting" | "analysing" | "completed" | "failed";
 
 export interface ScanResult {
     _id: string;

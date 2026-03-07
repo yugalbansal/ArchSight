@@ -52,7 +52,7 @@ router.get("/:scanId", async (req, res) => {
             include: {
                 nodes: true,
                 edges: true,
-          
+                architectureAnalysis: true,
             }
         });
 
@@ -73,7 +73,9 @@ router.get("/:scanId", async (req, res) => {
         );
 
         // Include Engine 2 insights if available (richer metadata)
-        const insights = null;
+        const insights = scanData.architectureAnalysis
+            ? (scanData.architectureAnalysis.insights as unknown)
+            : null;
 
         return res.json({
             success: true,
