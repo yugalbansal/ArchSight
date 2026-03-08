@@ -12,6 +12,7 @@
         "start:worker": "node dist/workers/scan.worker.js"
     },
     "dependencies": {
+        "@auth/core": "0.41.0",
         "@auth/express": "^0.12.1",
         "@bull-board/api": "^6.20.2",
         "@bull-board/express": "^6.20.2",
@@ -28,6 +29,7 @@
         "dotenv": "^16.4.7",
         "express": "^4.21.0",
         "ioredis": "^5.9.3",
+        "jose": "^6.2.0",
         "octokit": "^5.0.5",
         "web-tree-sitter": "^0.24.7"
     },
@@ -43,8 +45,5 @@
         "prisma": "^6.19.2",
         "tsx": "^4.19.0",
         "typescript": "^5.8.3"
-    },
-    "overrides": {
-        "@auth/core": "0.41.0"
     }
 }

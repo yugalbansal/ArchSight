@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 
 function GitHubAppCallbackContent() {
     const searchParams = useSearchParams();
@@ -29,11 +30,9 @@ function GitHubAppCallbackContent() {
             }
 
             try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/github/installation`, {
+                const res = await fetchWithAuth(`${API_URL}/api/github/installation`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ installation_id: installationId }),
-                    credentials: "include"
                 });
 
                 if (res.ok) {

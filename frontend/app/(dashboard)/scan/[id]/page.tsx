@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 
 // ─── V3 ArchitectureGraph Types ──────────────────────────────────────
 
@@ -336,10 +337,7 @@ export default function ScanResultPage() {
 
         const fetchScan = async () => {
             try {
-                const res = await fetch(
-                    `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/scan/${id}`,
-                    { credentials: "include" }
-                );
+                const res = await fetchWithAuth(`${API_URL}/api/scan/${id}`);
                 if (res.ok) {
                     const data = await res.json();
                     setScan(data.scan);

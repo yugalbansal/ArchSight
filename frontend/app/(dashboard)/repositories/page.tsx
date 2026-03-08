@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { FolderGit2, Loader2, ArrowRight, Github, RefreshCw, Activity, TerminalSquare, ShieldCheck, Box, Network, GitBranch } from "lucide-react";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 
 interface Repository {
     id: number;
@@ -28,9 +29,7 @@ export default function Repositories() {
     const fetchRepos = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/github/repositories`, {
-                credentials: "include"
-            });
+            const res = await fetchWithAuth(`${API_URL}/api/github/repositories`);
             if (res.ok) {
                 const data = await res.json();
                 setRepositories(data.repositories || []);
@@ -49,16 +48,14 @@ export default function Repositories() {
     const handleScanRepository = async (repo: Repository) => {
         setIsScanning((prev) => ({ ...prev, [repo.id]: true }));
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/scan`, {
+            const res = await fetchWithAuth(`${API_URL}/api/scan`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     owner: repo.owner,
                     repo: repo.name,
                     branch: repo.default_branch,
                     // The backend automatically utilizes the Octokit Installation Token behind the scenes!
                 }),
-                credentials: "include"
             });
 
             if (res.ok) {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useScanPolling } from "@/hooks/useScanPolling";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 import {
     Github, Play, Loader2, CheckCircle2, XCircle,
     TerminalSquare, ShieldAlert, Cpu, GitBranch,
@@ -43,12 +44,10 @@ export default function ScanTestingPage() {
         const [owner, repo] = repoInput.split("/");
 
         try {
-            const reqUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/scan`;
-            const response = await fetch(reqUrl, {
+            const reqUrl = `${API_URL}/api/scan`;
+            const response = await fetchWithAuth(reqUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ owner, repo, branch: branchInput }),
-                credentials: "include"
             });
 
             const data = await response.json();

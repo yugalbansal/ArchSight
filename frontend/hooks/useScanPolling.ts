@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 
 export type ScanStatus = "pending" | "cloning" | "detecting" | "parsing" | "extracting" | "analysing" | "completed" | "failed";
 
@@ -30,12 +31,8 @@ export function useScanPolling(initialIntervalMs = 2000): UseScanPollingResult {
 
     const fetchScanStatus = useCallback(async (id: string) => {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/scan/${id}`, {
+            const response = await fetchWithAuth(`${API_URL}/api/scan/${id}`, {
                 method: "GET",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                credentials: "include", // Or "include" if using cookies. Auth.js often uses cookies
             });
 
             if (!response.ok) {

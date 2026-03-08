@@ -1,12 +1,11 @@
 import { Router, Request, Response } from "express";
-import { getSession } from "@auth/express";
-import { authConfig } from "../lib/auth-config.js";
+import { getAuthSession } from "../lib/auth-middleware.js";
 import { prisma } from "../lib/db.js";
 const router = Router();
 
 // Middleware: require authenticated session
 async function requireAuth(req: Request, res: Response, next: Function) {
-    const session = res.locals.session ?? (await getSession(req, authConfig));
+    const session = res.locals.session ?? (await getAuthSession(req));
     if (!session?.user) {
         res.status(401).json({ error: "Unauthorized" });
         return;

@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { getSession } from "@auth/express";
+import { getAuthSession } from "../lib/auth-middleware.js";
 import { scanQueue, SCAN_QUEUE_NAME } from "../queue/index.js";
 import { ScanModel } from "../models/scan.model.js";
-import { authConfig } from "../lib/auth-config.js";
 import { prisma } from "../lib/db.js";
 
 const router = Router();
@@ -13,7 +12,7 @@ const router = Router();
  */
 router.post("/", async (req, res) => {
     try {
-        const session = await getSession(req, authConfig);
+        const session = await getAuthSession(req);
         if (!session?.user) {
             return res.status(401).json({ error: "Unauthorized. Please log in." });
         }
@@ -78,7 +77,7 @@ router.post("/", async (req, res) => {
  */
 router.get("/history", async (req, res) => {
     try {
-        const session = await getSession(req, authConfig);
+        const session = await getAuthSession(req);
         if (!session?.user?.id) {
             return res.status(401).json({ error: "Unauthorized. Please log in." });
         }
@@ -97,7 +96,7 @@ router.get("/history", async (req, res) => {
  */
 router.get("/user/all", async (req, res) => {
     try {
-        const session = await getSession(req, authConfig);
+        const session = await getAuthSession(req);
         if (!session?.user?.id) {
             return res.status(401).json({ error: "Unauthorized. Please log in." });
         }
@@ -116,7 +115,7 @@ router.get("/user/all", async (req, res) => {
  */
 router.get("/:id", async (req, res) => {
     try {
-        const session = await getSession(req, authConfig);
+        const session = await getAuthSession(req);
         if (!session?.user) {
             return res.status(401).json({ error: "Unauthorized. Please log in." });
         }

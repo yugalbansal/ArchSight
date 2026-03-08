@@ -6,6 +6,7 @@ import Link from "next/link";
 import { FolderGit2, Clock, ArrowRight, Loader2, XCircle, CheckCircle2, ScanSearch, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 
 interface ScanDocument {
     _id: string;
@@ -39,9 +40,7 @@ export default function Dashboard() {
         async function fetchScans() {
             if (!session?.user) return;
             try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/scan/user/all`, {
-                    credentials: "include"
-                });
+                const res = await fetchWithAuth(`${API_URL}/api/scan/user/all`);
                 if (res.ok) {
                     const data = await res.json();
                     setScans(data.scans || []);

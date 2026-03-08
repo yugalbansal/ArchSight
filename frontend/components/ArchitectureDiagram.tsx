@@ -19,6 +19,7 @@ import 'reactflow/dist/base.css';
 
 import { nodeTypes } from './CustomNodes';
 import { edgeTypes } from './CustomEdges';
+import { fetchWithAuth, API_URL } from '@/lib/api';
 
 interface ArchitectureDiagramProps {
   scanId: string;
@@ -65,8 +66,7 @@ function DiagramInner({ scanId, fullscreen }: ArchitectureDiagramProps) {
       setError(null);
       fitCalled.current = false;
 
-      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res  = await fetch(`${base}/api/architecture/${scanId}`, { credentials: 'include' });
+      const res  = await fetchWithAuth(`${API_URL}/api/architecture/${scanId}`);
 
       if (!res.ok) {
         if (res.status === 404) {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Github, CheckCircle, XCircle, Clock, Search, Network, GitBranch, ChevronRight, Layers } from "lucide-react";
 import Link from "next/link";
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
+import { fetchWithAuth, API_URL } from "@/lib/api";
 
 interface ScanResult {
   _id: string;
@@ -30,10 +31,7 @@ export default function ArchitectureGallery() {
   const loadScans = async () => {
     try {
       setLoading(true);
-      const r = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/scan/history`,
-        { credentials: 'include' }
-      );
+      const r = await fetchWithAuth(`${API_URL}/api/scan/history`);
       if (!r.ok) throw new Error(r.statusText);
       const d = await r.json();
       const completed = (d.scans || [])

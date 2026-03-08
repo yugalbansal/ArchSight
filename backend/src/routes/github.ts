@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { getSession } from "@auth/express";
-import { authConfig } from "../lib/auth-config.js";
+import { getAuthSession } from "../lib/auth-middleware.js";
 import { githubApp, getInstallationOctokit } from "../lib/github.js";
 import { prisma } from "../lib/db.js";
 
@@ -13,7 +12,7 @@ const router = Router();
  */
 router.post("/installation", async (req, res) => {
     try {
-        const session = await getSession(req, authConfig);
+        const session = await getAuthSession(req);
         if (!session?.user?.id) return res.status(401).json({ error: "Unauthorized" });
 
         const { installation_id } = req.body;
@@ -50,7 +49,7 @@ router.post("/installation", async (req, res) => {
  */
 router.get("/repositories", async (req, res) => {
     try {
-        const session = await getSession(req, authConfig);
+        const session = await getAuthSession(req);
         if (!session?.user?.id) return res.status(401).json({ error: "Unauthorized" });
 
         const userId = session.user.id;
