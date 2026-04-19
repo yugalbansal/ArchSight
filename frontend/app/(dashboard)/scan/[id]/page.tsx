@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -115,6 +115,24 @@ interface IntelligenceOutput {
     metrics: GraphMetrics;
     analyzed_at: string;
     engine_version: string;
+}
+
+interface IntelligenceAnalysisRecord {
+    scanId: string;
+    riskLevel: RiskLevel;
+    confidence: ConfidenceLevel;
+    theme: string;
+    metrics: GraphMetrics;
+    patterns: DetectedPattern[];
+    insights: InsightItem[];
+    strategy: {
+        refactor_strategy: string;
+        scaling_outlook: string;
+        long_term_recommendation: string;
+        primary_risk_drivers: string[];
+        priority_order: string[];
+    };
+    updatedAt: string;
 }
 
 interface ScanResult {
@@ -320,6 +338,25 @@ function RiskGauge({ score }: { score: number }) {
     );
 }
 
+function mapAnalysisRecordToIntelligence(record: IntelligenceAnalysisRecord): IntelligenceOutput {
+    return {
+        scan_id: record.scanId,
+        architectural_theme: record.theme,
+        overall_risk_level: record.riskLevel,
+        confidence_level: record.confidence,
+        primary_risk_drivers: record.strategy?.primary_risk_drivers ?? [],
+        priority_order: record.strategy?.priority_order ?? [],
+        refactor_strategy: record.strategy?.refactor_strategy ?? "",
+        scaling_outlook: record.strategy?.scaling_outlook ?? "",
+        long_term_recommendation: record.strategy?.long_term_recommendation ?? "",
+        insights: Array.isArray(record.insights) ? record.insights : [],
+        detected_patterns: Array.isArray(record.patterns) ? record.patterns : [],
+        metrics: record.metrics,
+        analyzed_at: record.updatedAt,
+        engine_version: "3.0.0",
+    };
+}
+
 // ─── Component ───────────────────────────────────────────────────────
 
 export default function ScanResultPage() {
@@ -327,7 +364,10 @@ export default function ScanResultPage() {
     const { data: session } = useSession();
     const router = useRouter();
     const [scan, setScan] = useState<ScanResult | null>(null);
+    const [intelligence, setIntelligence] = useState<IntelligenceOutput | null>(null);
+    const intelligenceFetchedRef = useRef(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [isReanalyzing, setIsReanalyzing] = useState(false);
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
     const [activeTab, setActiveTab] = useState<'codescan' | 'archmap' | 'risksight'>('codescan');
@@ -335,24 +375,92 @@ export default function ScanResultPage() {
     useEffect(() => {
         if (!session?.user || !id) return;
 
-        const fetchScan = async () => {
+        intelligenceFetchedRef.current = false;
+        let intervalId: ReturnType<typeof setInterval> | undefined;
+
+        const fetchScan = async (): Promise<ScanResult | null> => {
             try {
                 const res = await fetchWithAuth(`${API_URL}/api/scan/${id}`);
                 if (res.ok) {
                     const data = await res.json();
                     setScan(data.scan);
+                    return data.scan as ScanResult;
                 }
             } catch (err) {
                 console.error("Failed to load scan", err);
-            } finally {
-                setIsLoading(false);
+            }
+
+            return null;
+        };
+
+        const fetchIntelligence = async () => {
+            try {
+                const res = await fetchWithAuth(`${API_URL}/api/intelligence/${id}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setIntelligence(mapAnalysisRecordToIntelligence(data.analysis as IntelligenceAnalysisRecord));
+                } else if (res.status === 404) {
+                    setIntelligence(null);
+                }
+            } catch (err) {
+                console.error("Failed to load intelligence", err);
             }
         };
 
-        fetchScan();
-        const interval = setInterval(fetchScan, 3000);
-        return () => clearInterval(interval);
+        const fetchAll = async (): Promise<string | undefined> => {
+            const current = await fetchScan();
+            if (current?.status === "completed" && !intelligenceFetchedRef.current) {
+                await fetchIntelligence();
+                intelligenceFetchedRef.current = true;
+            }
+
+            if (current && ["completed", "failed"].includes(current.status) && intervalId) {
+                clearInterval(intervalId);
+                intervalId = undefined;
+            }
+
+            setIsLoading(false);
+            return current?.status;
+        };
+
+        (async () => {
+            const initialStatus = await fetchAll();
+
+            // Start polling only while the scan is in-progress.
+            if (initialStatus && ["completed", "failed"].includes(initialStatus)) {
+                return;
+            }
+
+            intervalId = setInterval(fetchAll, 3000);
+        })();
+
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
     }, [id, session]);
+
+    const handleReanalyze = async () => {
+        if (!id || isReanalyzing) return;
+        setIsReanalyzing(true);
+        try {
+            const res = await fetchWithAuth(`${API_URL}/api/intelligence/${id}/reanalyze`, {
+                method: "POST",
+            });
+
+            if (!res.ok) {
+                const errorPayload = await res.json().catch(() => ({ error: "Failed to reanalyze" }));
+                throw new Error(errorPayload.error || "Failed to reanalyze");
+            }
+
+            const payload = await res.json();
+            setIntelligence(payload.analysis as IntelligenceOutput);
+            intelligenceFetchedRef.current = true;
+        } catch (err) {
+            console.error("Intelligence reanalysis failed", err);
+        } finally {
+            setIsReanalyzing(false);
+        }
+    };
 
     useEffect(() => {
         if (scan?.status === "completed" || scan?.status === "failed") {
@@ -407,7 +515,7 @@ export default function ScanResultPage() {
 
     const result = scan.engine_result;
     const arch = result?.architecture;
-    const intel = result?.intelligence;
+    const intel = intelligence ?? result?.intelligence;
     const isProcessing = !["completed", "failed"].includes(scan.status);
     const groupedNodes = groupNodesByType(arch?.nodes);
     const nodeTypes = Object.keys(groupedNodes);
@@ -664,6 +772,15 @@ export default function ScanResultPage() {
                                     </div>
                                 </div>
                                 <div className="text-right">
+                                    <Button
+                                        onClick={handleReanalyze}
+                                        disabled={isReanalyzing || isProcessing}
+                                        className="mb-3 bg-[#1E1E2E] hover:bg-[#2A2A3A] text-white border border-[#2A2A3A]"
+                                        size="sm"
+                                    >
+                                        {isReanalyzing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                                        {isReanalyzing ? "Reanalyzing..." : "Reanalyze"}
+                                    </Button>
                                     <p className={`text-3xl font-extrabold ${
                                         intel.overall_risk_level === 'critical' ? 'text-[#FF2D55]' :
                                         intel.overall_risk_level === 'high' ? 'text-[#FF4C6A]' :

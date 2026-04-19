@@ -9,6 +9,7 @@ import userRouter from "./routes/user.js";
 import scanRouter from "./routes/scan.js";
 import githubRouter from "./routes/github.js";
 import architectureRouter from "./routes/architecture.routes.js";
+import intelligenceRouter from "./routes/intelligence.js";
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -52,6 +53,7 @@ app.use("/api/user", userRouter);
 app.use("/api/scan", scanRouter);
 app.use("/api/github", githubRouter);
 app.use("/api/architecture", architectureRouter);
+app.use("/api/intelligence", intelligenceRouter);
 
 // Set up Bull-Board UI for graphical queue monitoring
 const serverAdapter = new ExpressAdapter();

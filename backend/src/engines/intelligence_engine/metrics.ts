@@ -389,19 +389,44 @@ export function computeGraphMetrics(graph: ArchitectureGraph): GraphMetrics {
         ? node_metrics.reduce((s, n) => s + n.instability, 0) / node_metrics.length
         : 0;
 
-    // ── Risk Score (0-100, deterministic formula) ─────────────────────
-    //   Cycle penalty:         up to 30 pts (10 pts per cycle, capped)
-    //   Density penalty:       up to 20 pts
-    //   Depth penalty:         up to 20 pts
-    //   SCC penalty:           up to 15 pts
-    //   Coupling penalty:      up to 15 pts
-    let risk_score = 0;
-    risk_score += Math.min(30, cycleCount * 10);
-    risk_score += density > 0.3 ? 20 : density > 0.2 ? 10 : density > 0.1 ? 5 : 0;
-    risk_score += max_depth > 8 ? 20 : max_depth > 6 ? 12 : max_depth > 4 ? 6 : 0;
-    risk_score += largestSCCSize > 8 ? 15 : largestSCCSize > 5 ? 8 : largestSCCSize > 2 ? 3 : 0;
-    risk_score += coupling_score > 15 ? 15 : coupling_score > 10 ? 8 : coupling_score > 5 ? 3 : 0;
-    risk_score = Math.min(100, Math.round(risk_score));
+    // ── Risk Score (0-100, deterministic continuous formula) ─────────
+    // Why continuous: avoids "all-or-nothing" jumps and prevents flat 0 scores
+    // on structurally non-trivial graphs.
+    //
+    // Components (capped):
+    //   cycles:            up to 35 pts
+    //   density:           up to 20 pts
+    //   depth:             up to 15 pts
+    //   SCC concentration: up to 10 pts
+    //   coupling:          up to 10 pts
+    //   instability:       up to 10 pts
+    //   missing boundary:  up to 10 pts
+    const endpointCount = graph.nodes.filter(n => n.type === "http_endpoint").length;
+    const serviceCount = graph.nodes.filter(n => n.type === "business_logic_service").length;
+    const dbCount = graph.nodes.filter(n => n.type === "db_operation").length;
+    const hasMissingServiceBoundary = endpointCount > 0 && dbCount > 0 && serviceCount === 0;
+
+    const cyclePenalty = Math.min(35, cycleCount * 12);
+    const densityPenalty = Math.min(20, density * 80);
+    const depthPenalty = Math.min(15, Math.max(0, max_depth - 1) * 2);
+    const sccRatio = total_nodes > 1 ? largestSCCSize / total_nodes : 0;
+    const sccPenalty = Math.min(10, sccRatio * 20);
+    const couplingPenalty = Math.min(10, coupling_score * 1.5);
+    const instabilityPenalty = Math.min(10, avg_instability * 12);
+    const boundaryPenalty = hasMissingServiceBoundary ? 10 : 0;
+
+    const risk_score = Math.min(
+        100,
+        Math.round(
+            cyclePenalty +
+            densityPenalty +
+            depthPenalty +
+            sccPenalty +
+            couplingPenalty +
+            instabilityPenalty +
+            boundaryPenalty
+        )
+    );
 
     return {
         total_nodes,

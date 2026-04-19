@@ -109,9 +109,14 @@ function computeRiskLevel(metrics: GraphMetrics, patterns: DetectedPattern[]): R
  * More nodes + edges = more data = higher confidence.
  */
 function computeConfidence(metrics: GraphMetrics): ConfidenceLevel {
-    if (metrics.total_nodes === 0) return "insufficient_data";
-    if (metrics.total_nodes >= 10 && metrics.total_edges >= 5) return "high";
-    if (metrics.total_nodes >= 5) return "medium";
+    if (metrics.total_nodes < 3) return "insufficient_data";
+    if (metrics.total_edges === 0) return "insufficient_data";
+
+    const edgesPerNode = metrics.total_edges / Math.max(metrics.total_nodes, 1);
+    const uniqueNodeTypes = new Set(metrics.node_metrics.map(n => n.node_type)).size;
+
+    if (metrics.total_nodes >= 10 && edgesPerNode >= 0.6 && uniqueNodeTypes >= 3) return "high";
+    if (metrics.total_nodes >= 6 && edgesPerNode >= 0.3 && uniqueNodeTypes >= 2) return "medium";
     return "low";
 }
 

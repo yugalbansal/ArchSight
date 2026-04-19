@@ -19,6 +19,20 @@ interface ScanResult {
   error_details?: string;
 }
 
+interface IntelligenceAnalysisListItem {
+  scanId: string;
+  createdAt: string;
+  scan: {
+    id: string;
+    branch: string;
+    status: string;
+    repository: {
+      owner: string;
+      name: string;
+    };
+  };
+}
+
 export default function ArchitectureGallery() {
   const [scans, setScans]           = useState<ScanResult[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -31,14 +45,23 @@ export default function ArchitectureGallery() {
   const loadScans = async () => {
     try {
       setLoading(true);
-      const r = await fetchWithAuth(`${API_URL}/api/scan/history`);
+      const r = await fetchWithAuth(`${API_URL}/api/intelligence/user/all`);
       if (!r.ok) throw new Error(r.statusText);
       const d = await r.json();
-      const completed = (d.scans || [])
-        .filter((s: ScanResult) => s.status === 'completed')
-        .sort((a: ScanResult, b: ScanResult) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
+      const analyses = (d.analyses || []) as IntelligenceAnalysisListItem[];
+      const completed = analyses
+        .filter((a) => a.scan?.status === 'completed')
+        .map((a) => ({
+          _id: a.scanId,
+          repo_owner: a.scan.repository.owner,
+          repo_name: a.scan.repository.name,
+          branch: a.scan.branch,
+          status: a.scan.status,
+          progress: 100,
+          message: 'Intelligence available',
+          created_at: a.createdAt,
+        } satisfies ScanResult))
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       // Deduplicate: keep only the latest scan per repo+branch
       const seen = new Set<string>();
