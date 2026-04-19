@@ -11,6 +11,7 @@
  */
 
 import crypto from "crypto";
+// generate uniquw id with this crypto
 import type { ArchitectureGraph } from "../repo_engine/v3/graph/builder.js";
 import type { DetectedPattern, GraphMetrics, InsightItem } from "./schemas.js";
 
