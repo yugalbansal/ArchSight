@@ -120,7 +120,11 @@ const Card: React.FC<{ data: CustomNodeData; cfg: CardCfg }> = ({ data, cfg }) =
             border: `1px solid ${cfg.accent}44`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <cfg.Icon size={14} color={cfg.accent} />
+            {(() => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const Icon = cfg.Icon as any;
+              return <Icon size={14} color={cfg.accent} />;
+            })()}
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>

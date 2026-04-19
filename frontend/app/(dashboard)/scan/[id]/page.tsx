@@ -941,7 +941,8 @@ export default function ScanResultPage() {
                     <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]" style={{ animationDelay: '200ms' }}>
                         {Object.entries(groupedNodes).map(([type, nodes]) => {
                             const config = nodeTypeConfig[type] || { label: type, color: "#A0A0C0", icon: Box, badge: type };
-                            const IconComponent = config.icon;
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            const IconComponent = config.icon as any;
                             const isExpanded = expandedSections.has(type);
 
                             return (

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Zap, LayoutDashboard, FolderGit2, ScanSearch, Lightbulb, DollarSign, Settings, FileText, Bell, Menu, ChevronLeft, LogOut, User } from "lucide-react";
+import { LayoutDashboard, FolderGit2, ScanSearch, Lightbulb, DollarSign, Settings, FileText, Bell, Menu, ChevronLeft, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -14,6 +14,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AnimatedNavLink } from "@/components/ui/sign-in-flow-1";
 
 export const navItems = [
     { label: "Overview", icon: LayoutDashboard, path: "/dashboard", disabled: false },
@@ -42,16 +43,21 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         : "?";
 
     return (
-        <div className="min-h-screen bg-background flex flex-col">
+        <div className="min-h-screen bg-black text-[#A0A0C0] flex flex-col">
             {/* Top Nav */}
-            <header className="h-14 border-b border-white/5 flex items-center justify-between px-4 lg:px-6 shrink-0 relative z-20 bg-background/80 backdrop-blur-md">
+            <header className="h-16 border-b border-[#333]/50 bg-[#1f1f1f57] backdrop-blur-md flex items-center justify-between px-4 lg:px-6 shrink-0 relative z-20 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
                 <div className="flex items-center gap-4">
                     <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground" onClick={() => setMobileOpen(!mobileOpen)}>
                         <Menu className="h-5 w-5" />
                     </Button>
                     <Link href="/" className="flex items-center gap-2">
-                        <Zap className="h-5 w-5 text-primary" />
-                        <span className="font-bold text-foreground">ArchSight</span>
+                         <div className="relative w-5 h-5 flex items-center justify-center">
+                            <span className="absolute w-1.5 h-1.5 rounded-full bg-gray-200 top-0 left-1/2 transform -translate-x-1/2 opacity-80"></span>
+                            <span className="absolute w-1.5 h-1.5 rounded-full bg-gray-200 left-0 top-1/2 transform -translate-y-1/2 opacity-80"></span>
+                            <span className="absolute w-1.5 h-1.5 rounded-full bg-gray-200 right-0 top-1/2 transform -translate-y-1/2 opacity-80"></span>
+                            <span className="absolute w-1.5 h-1.5 rounded-full bg-gray-200 bottom-0 left-1/2 transform -translate-x-1/2 opacity-80"></span>
+                         </div>
+                        <span className="font-bold text-white tracking-tight">ArchSight</span>
                     </Link>
                     <nav className="hidden md:flex items-center gap-6 ml-8 text-sm">
                         {[
@@ -65,9 +71,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                                     {l.label}
                                 </span>
                             ) : (
-                                <Link key={l.label} href={l.href} className="text-muted-foreground hover:text-foreground transition-colors">
+                                <AnimatedNavLink key={l.label} href={l.href}>
                                     {l.label}
-                                </Link>
+                                </AnimatedNavLink>
                             )
                         ))}
                     </nav>
