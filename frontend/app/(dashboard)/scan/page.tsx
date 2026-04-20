@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useScanPolling } from "@/hooks/useScanPolling";
 import { fetchWithAuth, API_URL } from "@/lib/api";
 import {
@@ -12,11 +13,14 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
 export default function ScanTestingPage() {
+    const router = useRouter();
     const [repoInput, setRepoInput] = useState("gothinkster/node-express-realworld-example-app");
     const [branchInput, setBranchInput] = useState("master");
 
     const { scan, error, isPolling, startPolling } = useScanPolling(1500);
     const [isTriggering, setIsTriggering] = useState(false);
+    const [isCancelling, setIsCancelling] = useState(false);
+    const [currentScanId, setCurrentScanId] = useState<string | null>(null);
     const [logs, setLogs] = useState<{ time: string, msg: string }[]>([]);
 
     // Auto-scroll logs
@@ -58,6 +62,7 @@ export default function ScanTestingPage() {
                 return;
             }
 
+            setCurrentScanId(data.scan_id);
             startPolling(data.scan_id);
         } catch (err) {
             alert("Failed to connect to backend");
@@ -65,12 +70,29 @@ export default function ScanTestingPage() {
         }
     };
 
-    // If a scan has completed, stop showing triggering state
+    const handleCancelScan = async () => {
+        if (!currentScanId || isCancelling) return;
+        setIsCancelling(true);
+        try {
+            await fetchWithAuth(`${API_URL}/api/scan/${currentScanId}/cancel`, { method: "POST" });
+        } catch (err) {
+            console.error("Failed to cancel scan", err);
+        } finally {
+            setIsCancelling(false);
+            setCurrentScanId(null);
+            setLogs([]);
+        }
+    };
+
+    // Auto-redirect to full report when scan completes
     useEffect(() => {
+        if (scan && scan.status === "completed" && currentScanId) {
+            router.push(`/scan/${currentScanId}`);
+        }
         if (scan && (scan.status === "completed" || scan.status === "failed")) {
             setIsTriggering(false);
         }
-    }, [scan]);
+    }, [scan, currentScanId, router]);
 
     return (
         <div className="min-h-screen bg-[#0A0A0F] text-[#A0A0C0] font-sans selection:bg-[#6C63FF]/30 p-6 lg:p-12 relative overflow-hidden">
@@ -202,6 +224,21 @@ export default function ScanTestingPage() {
                                         <div ref={logsEndRef} />
                                     </div>
                                 </div>
+
+                                {/* Stop Scan button — only visible while running */}
+                                {isPolling && scan.status !== 'completed' && scan.status !== 'failed' && (
+                                    <button
+                                        onClick={handleCancelScan}
+                                        disabled={isCancelling}
+                                        className="mt-4 w-full flex items-center justify-center gap-2 bg-[#FF4C6A]/10 hover:bg-[#FF4C6A]/20 border border-[#FF4C6A]/30 hover:border-[#FF4C6A]/60 text-[#FF4C6A] font-semibold text-sm py-2.5 rounded-xl transition-all disabled:opacity-50 disabled:pointer-events-none"
+                                    >
+                                        {isCancelling ? (
+                                            <><Loader2 className="w-4 h-4 animate-spin" /> Cancelling...</>
+                                        ) : (
+                                            <><XCircle className="w-4 h-4" /> Stop Scan</>
+                                        )}
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

@@ -18,6 +18,9 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 import { fetchWithAuth, API_URL } from "@/lib/api";
+import { FileTree } from "@/components/ui/file-tree";
+import { FileExplorerPanel } from "@/components/ui/file-explorer-panel";
+import { ScanLogsViewer, type ScanLog } from "@/components/ui/scan-logs-viewer";
 
 // ─── V3 ArchitectureGraph Types ──────────────────────────────────────
 
@@ -241,8 +244,38 @@ function shortenPath(fullPath: string): string {
     if (extractedIdx >= 0 && extractedIdx + 1 < parts.length) {
         return parts.slice(extractedIdx + 2).join("/");
     }
-    // Fallback: show last 3 segments
     return parts.slice(-3).join("/");
+}
+
+type FileNodeType = { name: string; type: "file" | "folder"; extension?: string; children?: FileNodeType[] };
+
+function buildFileTree(files: FileStructureEntry[]): FileNodeType[] {
+    const root: FileNodeType[] = [];
+    const pathMap: Record<string, FileNodeType> = {};
+
+    for (const entry of files) {
+        const shortPath = shortenPath(entry.file);
+        const parts = shortPath.split("/");
+        let currentLevel = root;
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            const isFile = i === parts.length - 1;
+            const key = parts.slice(0, i + 1).join("/");
+
+            if (!pathMap[key]) {
+                const ext = isFile ? part.split(".").pop() : undefined;
+                const node: FileNodeType = { name: part, type: isFile ? "file" : "folder", extension: ext, children: isFile ? undefined : [] };
+                pathMap[key] = node;
+                currentLevel.push(node);
+            }
+
+            if (!isFile) {
+                currentLevel = pathMap[key].children!;
+            }
+        }
+    }
+    return root;
 }
 
 function groupNodesByType(nodes: ArchitectureNode[] | undefined | null): Record<string, ArchitectureNode[]> {
@@ -370,7 +403,7 @@ export default function ScanResultPage() {
     const [isReanalyzing, setIsReanalyzing] = useState(false);
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
-    const [activeTab, setActiveTab] = useState<'codescan' | 'archmap' | 'risksight'>('codescan');
+    const [activeTab, setActiveTab] = useState<'codescan' | 'explorer' | 'archmap' | 'risksight'>('codescan');
 
     useEffect(() => {
         if (!session?.user || !id) return;
@@ -682,6 +715,27 @@ export default function ScanResultPage() {
                                 </span>
                             </button>
 
+                            {/* Tab 1b ── Explorer */}
+                            <button
+                                onClick={() => setActiveTab('explorer')}
+                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                    activeTab === 'explorer'
+                                        ? 'border-[#F59E0B] text-[#F59E0B]'
+                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                }`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <FolderTree className="h-4 w-4" />
+                                    <span>Explorer</span>
+                                    <span className="text-[10px] font-mono opacity-50">File Inspector</span>
+                                    {arch?.file_structure && arch.file_structure.length > 0 && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-mono border bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30">
+                                            {arch.file_structure.length}
+                                        </span>
+                                    )}
+                                </span>
+                            </button>
+
                             {/* Tab 2 ── ArchMap */}
                             <button
                                 onClick={() => setActiveTab('archmap')}
@@ -734,9 +788,50 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
+                {/* ─── Tab Content: Explorer — File Inspector ───────────── */}
+                {result && activeTab === 'explorer' && arch && (
+                    <div className="reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards] space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <FolderTree className="h-5 w-5 text-[#F59E0B]" />
+                            <div>
+                                <h3 className="text-white font-semibold">File Explorer</h3>
+                                <p className="text-[#5A5A7A] text-xs font-mono">Click any file to inspect its purpose, issues, metrics and fix recommendations</p>
+                            </div>
+                        </div>
+                        <FileExplorerPanel
+                            fileStructure={arch.file_structure || []}
+                            architectureNodes={arch.nodes || []}
+                            nodeMetrics={intel?.metrics?.node_metrics || []}
+                            insights={intel?.insights || []}
+                        />
+                    </div>
+                )}
+                {result && activeTab === 'explorer' && !arch && (
+                    <div className="flex items-center justify-center h-40 text-[#5A5A7A]">
+                        <p className="font-mono text-sm">No file structure data available for this scan.</p>
+                    </div>
+                )}
+
                 {/* ─── Tab Content: RiskSight — Intelligence Engine ─────── */}
                 {result && activeTab === 'risksight' && intel && (
                     <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+
+                        {/* ─── Insights as Filterable Log Table ─────────── */}
+                        {intel.insights && intel.insights.length > 0 && (
+                            <ScanLogsViewer
+                                title={`Risk Intelligence Feed — ${intel.insights.length} findings`}
+                                logs={intel.insights.map((ins, i): ScanLog => ({
+                                    id: ins.id || `insight-${i}`,
+                                    level: (ins.severity === 'critical' ? 'critical' : ins.severity === 'high' ? 'error' : ins.severity === 'medium' ? 'warning' : 'info') as ScanLog['level'],
+                                    category: ins.category,
+                                    title: ins.title,
+                                    message: ins.description,
+                                    affectedNodes: ins.affected_nodes,
+                                    recommendation: ins.recommendation,
+                                    tags: [ins.severity, ins.category, ins.triggered_by].filter(Boolean),
+                                }))}
+                            />
+                        )}
 
                         {/* Risk Banner */}
                         <div className={`rounded-2xl p-6 border ${
@@ -1039,7 +1134,15 @@ export default function ScanResultPage() {
 
                 {/* ─── AST File Structure ─────────────────────────────── */}
                 {arch && arch.file_structure && arch.file_structure.length > 0 && (
-                    <div className="bg-[#040408] rounded-2xl border border-[#1E1E2E] overflow-hidden flex flex-col shadow-2xl reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]" style={{ animationDelay: '400ms' }}>
+                    <div className="space-y-4 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]" style={{ animationDelay: '400ms' }}>
+                        {/* Visual FileTree */}
+                        <FileTree
+                            data={buildFileTree(arch.file_structure)}
+                            className="border-[#1E1E2E]"
+                        />
+
+                        {/* Expandable detail list */}
+                        <div className="bg-[#040408] rounded-2xl border border-[#1E1E2E] overflow-hidden flex flex-col shadow-2xl">
                         <button
                             onClick={() => toggleSection("file_structure")}
                             className="w-full flex items-center gap-3 px-5 py-3 border-b border-[#1E1E2E] bg-[#0A0A0F] hover:bg-[#0D0D14] transition-colors"
@@ -1165,6 +1268,7 @@ export default function ScanResultPage() {
                                 })}
                             </div>
                         )}
+                        </div>
                     </div>
                 )}
 

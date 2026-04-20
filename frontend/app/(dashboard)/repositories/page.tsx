@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { FolderGit2, Loader2, ArrowRight, Github, RefreshCw, Activity, TerminalSquare, ShieldCheck, Box, Network, GitBranch } from "lucide-react";
+import { FolderGit2, Loader2, ArrowRight, Github, RefreshCw, Activity, TerminalSquare, ShieldCheck, Box, Network, GitBranch, XCircle } from "lucide-react";
 import { fetchWithAuth, API_URL } from "@/lib/api";
 
 interface Repository {
@@ -23,6 +23,8 @@ export default function Repositories() {
     const [repositories, setRepositories] = useState<Repository[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isScanning, setIsScanning] = useState<Record<number, boolean>>({});
+    const [isCancelling, setIsCancelling] = useState<Record<number, boolean>>({});
+    const [activeScanIds, setActiveScanIds] = useState<Record<number, string>>({});
 
     const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || "archsight";
 
@@ -54,20 +56,39 @@ export default function Repositories() {
                     owner: repo.owner,
                     repo: repo.name,
                     branch: repo.default_branch,
-                    // The backend automatically utilizes the Octokit Installation Token behind the scenes!
                 }),
             });
 
             if (res.ok) {
                 const data = await res.json();
-                router.push(`/scan/${data.scan_id}`); // Navigate to live scan results page
+                // Store scan_id so user can cancel before redirect
+                setActiveScanIds((prev) => ({ ...prev, [repo.id]: data.scan_id }));
+                // Short delay so Stop button is visible before redirect
+                setTimeout(() => {
+                    router.push(`/scan/${data.scan_id}`);
+                }, 800);
             } else {
                 console.error("Failed to queue scan");
+                setIsScanning((prev) => ({ ...prev, [repo.id]: false }));
             }
         } catch (error) {
             console.error("Trigger scan error", error);
+            setIsScanning((prev) => ({ ...prev, [repo.id]: false }));
+        }
+    };
+
+    const handleCancelScan = async (repo: Repository) => {
+        const scanId = activeScanIds[repo.id];
+        if (!scanId || isCancelling[repo.id]) return;
+        setIsCancelling((prev) => ({ ...prev, [repo.id]: true }));
+        try {
+            await fetchWithAuth(`${API_URL}/api/scan/${scanId}/cancel`, { method: "POST" });
+        } catch (err) {
+            console.error("Failed to cancel scan", err);
         } finally {
             setIsScanning((prev) => ({ ...prev, [repo.id]: false }));
+            setIsCancelling((prev) => ({ ...prev, [repo.id]: false }));
+            setActiveScanIds((prev) => { const n = { ...prev }; delete n[repo.id]; return n; });
         }
     };
 
@@ -171,23 +192,36 @@ export default function Repositories() {
                                         </span>
                                     </div>
 
-                                    <button
-                                        onClick={() => handleScanRepository(repo)}
-                                        disabled={isScanning[repo.id]}
-                                        className="bg-[#6C63FF]/10 hover:bg-[#6C63FF] text-[#6C63FF] hover:text-white font-semibold py-2 px-4 rounded-lg transition-all text-sm flex items-center gap-2 group-hover:shadow-[0_0_15px_rgba(108,99,255,0.3)] disabled:opacity-50 disabled:pointer-events-none"
-                                    >
-                                        {isScanning[repo.id] ? (
-                                            <>
+                                    {isScanning[repo.id] ? (
+                                        <div className="flex items-center gap-2">
+                                            {/* Stop Scan button */}
+                                            <button
+                                                onClick={() => handleCancelScan(repo)}
+                                                disabled={isCancelling[repo.id]}
+                                                className="bg-[#FF4C6A]/10 hover:bg-[#FF4C6A]/20 border border-[#FF4C6A]/30 hover:border-[#FF4C6A]/60 text-[#FF4C6A] font-semibold py-2 px-3 rounded-lg transition-all text-sm flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+                                            >
+                                                {isCancelling[repo.id] ? (
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                ) : (
+                                                    <XCircle className="h-3.5 w-3.5" />
+                                                )}
+                                                <span className="text-xs">{isCancelling[repo.id] ? "Stopping…" : "Stop"}</span>
+                                            </button>
+                                            {/* Scanning indicator */}
+                                            <div className="bg-[#6C63FF]/10 text-[#6C63FF] font-semibold py-2 px-4 rounded-lg text-sm flex items-center gap-2 opacity-70">
                                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                                Preparing Work
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Activity className="h-4 w-4" />
-                                                Scan Target
-                                            </>
-                                        )}
-                                    </button>
+                                                Queueing…
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleScanRepository(repo)}
+                                            className="bg-[#6C63FF]/10 hover:bg-[#6C63FF] text-[#6C63FF] hover:text-white font-semibold py-2 px-4 rounded-lg transition-all text-sm flex items-center gap-2 group-hover:shadow-[0_0_15px_rgba(108,99,255,0.3)]"
+                                        >
+                                            <Activity className="h-4 w-4" />
+                                            Scan Target
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}

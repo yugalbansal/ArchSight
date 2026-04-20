@@ -139,4 +139,53 @@ router.get("/:id", async (req, res) => {
     }
 });
 
+/**
+ * POST /api/scan/:id/cancel
+ * Cancel a pending or in-progress scan.
+ */
+router.post("/:id/cancel", async (req, res) => {
+    try {
+        const session = await getAuthSession(req);
+        if (!session?.user) {
+            return res.status(401).json({ error: "Unauthorized. Please log in." });
+        }
+
+        const scanId = req.params.id;
+        const scan = await ScanModel.getById(scanId);
+
+        if (!scan) {
+            return res.status(404).json({ error: "Scan not found." });
+        }
+
+        if (scan.user_id !== session.user.id) {
+            return res.status(403).json({ error: "Forbidden. This scan does not belong to you." });
+        }
+
+        if (["completed", "failed"].includes(scan.status)) {
+            return res.status(400).json({ error: "Scan is already finished and cannot be cancelled." });
+        }
+
+        // Try to remove the job from the queue (succeeds if still waiting)
+        try {
+            const job = await scanQueue.getJob(scanId);
+            if (job) {
+                await job.remove();
+                console.log(`[API:Scan:Cancel] Removed queued job ${scanId}`);
+            }
+        } catch (queueErr) {
+            console.warn(`[API:Scan:Cancel] Could not remove job from queue (may be active):`, queueErr);
+        }
+
+        // Mark scan as failed / cancelled in MongoDB regardless
+        await ScanModel.markFailed(scanId, "Scan cancelled by user.");
+
+        console.log(`[API:Scan:Cancel] Scan ${scanId} cancelled by user ${session.user.id}`);
+        res.status(200).json({ message: "Scan cancelled successfully.", scan_id: scanId });
+
+    } catch (error) {
+        console.error("[API:Scan:Cancel] Failed to cancel scan:", error);
+        res.status(500).json({ error: "Internal Server Error while cancelling scan." });
+    }
+});
+
 export default router;
