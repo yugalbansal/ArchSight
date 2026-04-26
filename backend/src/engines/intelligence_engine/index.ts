@@ -12,3 +12,4 @@
 
 export { analyzeArchitecture } from "./engine.js";
 export * from "./schemas.js";
+export * from "./reporting.js";

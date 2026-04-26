@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 export default function ScanTestingPage() {
     const router = useRouter();
     const [repoInput, setRepoInput] = useState("gothinkster/node-express-realworld-example-app");
-    const [branchInput, setBranchInput] = useState("master");
+    const [branchInput, setBranchInput] = useState("main");
 
     const { scan, error, isPolling, startPolling } = useScanPolling(1500);
     const [isTriggering, setIsTriggering] = useState(false);
