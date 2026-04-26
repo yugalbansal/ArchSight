@@ -138,6 +138,30 @@ interface IntelligenceAnalysisRecord {
     updatedAt: string;
 }
 
+interface ReportPlanItem {
+    priority: "P0" | "P1" | "P2";
+    title: string;
+    reason: string;
+    effort: string;
+    expected_impact: string;
+    steps: string[];
+}
+
+interface IntelligenceChatResponse {
+    reply: string;
+    mode: "full_report" | "qa";
+    report_markdown: string;
+    implementation_plan: ReportPlanItem[];
+    llm_handoff_markdown: string;
+    source: {
+        scan_id: string;
+        repository: string;
+        branch: string;
+        risk_level: string;
+        risk_score: number;
+    };
+}
+
 interface ScanResult {
     _id: string;
     repo_owner: string;
@@ -404,6 +428,13 @@ export default function ScanResultPage() {
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
     const [activeTab, setActiveTab] = useState<'codescan' | 'explorer' | 'archmap' | 'risksight'>('codescan');
+    const [chatInput, setChatInput] = useState("");
+    const [chatReply, setChatReply] = useState<string | null>(null);
+    const [chatReportMarkdown, setChatReportMarkdown] = useState<string>("");
+    const [chatPlan, setChatPlan] = useState<ReportPlanItem[]>([]);
+    const [llmHandoffMarkdown, setLlmHandoffMarkdown] = useState<string>("");
+    const [isChatLoading, setIsChatLoading] = useState(false);
+    const [chatError, setChatError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!session?.user || !id) return;
@@ -492,6 +523,44 @@ export default function ScanResultPage() {
             console.error("Intelligence reanalysis failed", err);
         } finally {
             setIsReanalyzing(false);
+        }
+    };
+
+    const requestIntelligenceChat = async (mode: "full_report" | "qa") => {
+        if (!id || isChatLoading) return;
+
+        if (mode === "qa" && !chatInput.trim()) {
+            setChatError("Enter a question first.");
+            return;
+        }
+
+        setIsChatLoading(true);
+        setChatError(null);
+
+        try {
+            const res = await fetchWithAuth(`${API_URL}/api/intelligence/${id}/chat`, {
+                method: "POST",
+                body: JSON.stringify({
+                    mode,
+                    message: mode === "qa" ? chatInput.trim() : "",
+                }),
+            });
+
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(payload.error || "Failed to generate intelligence chat response.");
+            }
+
+            const data = payload as IntelligenceChatResponse;
+            setChatReply(data.reply || null);
+            setChatReportMarkdown(data.report_markdown || "");
+            setChatPlan(Array.isArray(data.implementation_plan) ? data.implementation_plan : []);
+            setLlmHandoffMarkdown(data.llm_handoff_markdown || "");
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Unknown chat/report error";
+            setChatError(msg);
+        } finally {
+            setIsChatLoading(false);
         }
     };
 
@@ -815,6 +884,104 @@ export default function ScanResultPage() {
                 {/* ─── Tab Content: RiskSight — Intelligence Engine ─────── */}
                 {result && activeTab === 'risksight' && intel && (
                     <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+
+                        {/* Intelligence Copilot */}
+                        <div className="rounded-2xl p-6 bg-[#13131E] border border-[#1E1E2E]">
+                            <div className="flex items-center justify-between mb-4 gap-4">
+                                <div>
+                                    <h3 className="text-white font-semibold text-lg">Intelligence Copilot</h3>
+                                    <p className="text-[#A0A0C0] text-sm">Ask in plain language or generate a full report with implementation plan.</p>
+                                </div>
+                                <button
+                                    onClick={() => requestIntelligenceChat("full_report")}
+                                    disabled={isChatLoading}
+                                    className="bg-[#6C63FF] hover:bg-[#5a52e8] disabled:opacity-60 text-white text-sm font-semibold px-4 py-2 rounded-lg"
+                                >
+                                    {isChatLoading ? "Generating..." : "Generate Full Report"}
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col md:flex-row gap-3">
+                                <textarea
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder="Example: what should we fix first in simple language?"
+                                    className="w-full h-24 bg-[#0A0A0F] border border-[#1E1E2E] text-[#E2E8F0] rounded-xl p-3 text-sm outline-none focus:border-[#6C63FF]"
+                                />
+                                <button
+                                    onClick={() => requestIntelligenceChat("qa")}
+                                    disabled={isChatLoading}
+                                    className="md:w-44 bg-[#00D4FF]/10 hover:bg-[#00D4FF]/20 border border-[#00D4FF]/30 text-[#00D4FF] text-sm font-semibold px-4 py-2 rounded-lg h-fit"
+                                >
+                                    {isChatLoading ? "Thinking..." : "Ask Copilot"}
+                                </button>
+                            </div>
+
+                            {chatError && (
+                                <p className="mt-3 text-[#FF4C6A] text-sm">{chatError}</p>
+                            )}
+
+                            {chatReply && (
+                                <div className="mt-4 p-4 rounded-xl bg-[#0A0A0F] border border-[#1E1E2E]">
+                                    <p className="text-[#E2E8F0] text-sm leading-relaxed whitespace-pre-wrap">{chatReply}</p>
+                                </div>
+                            )}
+
+                            {chatPlan.length > 0 && (
+                                <div className="mt-4 space-y-3">
+                                    <h4 className="text-white font-semibold">Implementation Plan</h4>
+                                    {chatPlan.map((item, idx) => (
+                                        <div key={`${item.title}-${idx}`} className="p-4 rounded-xl bg-[#0A0A0F] border border-[#1E1E2E]">
+                                            <p className="text-[#E2E8F0] text-sm font-semibold">{idx + 1}. {item.priority} - {item.title}</p>
+                                            <p className="text-[#A0A0C0] text-sm mt-1">{item.reason}</p>
+                                            <p className="text-[#5A5A7A] text-xs mt-2">Effort: {item.effort} | Impact: {item.expected_impact}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {chatReportMarkdown && (
+                                <div className="mt-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="text-white font-semibold">Report Markdown</h4>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    await navigator.clipboard.writeText(chatReportMarkdown);
+                                                } catch {
+                                                    // ignore clipboard failures
+                                                }
+                                            }}
+                                            className="text-xs font-mono bg-[#1E1E2E] hover:bg-[#2A2A3A] text-[#A0A0C0] px-2 py-1 rounded border border-[#2A2A3A]"
+                                        >
+                                            Copy
+                                        </button>
+                                    </div>
+                                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#A0A0C0] bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-3">{chatReportMarkdown}</pre>
+                                </div>
+                            )}
+
+                            {llmHandoffMarkdown && (
+                                <div className="mt-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="text-white font-semibold">LLM Handoff Block</h4>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    await navigator.clipboard.writeText(llmHandoffMarkdown);
+                                                } catch {
+                                                    // ignore clipboard failures
+                                                }
+                                            }}
+                                            className="text-xs font-mono bg-[#1E1E2E] hover:bg-[#2A2A3A] text-[#A0A0C0] px-2 py-1 rounded border border-[#2A2A3A]"
+                                        >
+                                            Copy
+                                        </button>
+                                    </div>
+                                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#A0A0C0] bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-3">{llmHandoffMarkdown}</pre>
+                                </div>
+                            )}
+                        </div>
 
                         {/* ─── Insights as Filterable Log Table ─────────── */}
                         {intel.insights && intel.insights.length > 0 && (
