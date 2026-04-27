@@ -192,14 +192,19 @@ export default function Dashboard() {
                 </div>
 
                 {isLoading ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
-                        <div className="w-12 h-12 mb-4 relative">
-                            <div className="absolute inset-0 rounded-full border-t-2 border-[#6C63FF] animate-spin opacity-50" style={{ animationDuration: '2s' }} />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <ScanSearch className="h-5 w-5 text-[#6C63FF] animate-pulse" />
+                    <div className="divide-y divide-[#1E1E2E]">
+                        {[...Array(5)].map((_, i) => (
+                            <div key={i} className="flex items-center gap-4 px-6 py-4">
+                                <div className="w-8 h-8 rounded-lg bg-[#1E1E2E] animate-pulse shrink-0" />
+                                <div className="flex-1 space-y-2">
+                                    <div className="h-4 w-1/3 bg-[#1E1E2E] rounded animate-pulse" />
+                                    <div className="h-2 w-1/4 bg-[#1E1E2E] rounded animate-pulse opacity-50" />
+                                </div>
+                                <div className="hidden md:block h-5 w-16 bg-[#1E1E2E] rounded animate-pulse" />
+                                <div className="hidden lg:block h-4 w-20 bg-[#1E1E2E] rounded animate-pulse" />
+                                <div className="h-6 w-24 bg-[#1E1E2E] rounded-full animate-pulse" />
                             </div>
-                        </div>
-                        <p className="text-[#5A5A7A] text-sm">Fetching scan history…</p>
+                        ))}
                     </div>
                 ) : scans.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">

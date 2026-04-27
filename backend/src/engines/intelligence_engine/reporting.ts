@@ -572,6 +572,41 @@ async function callGroqJSON<T>(systemPrompt: string, userPrompt: string, fallbac
     }
 }
 
+async function callGroqText(systemPrompt: string, userPrompt: string, fallback: string): Promise<string> {
+    if (!GROQ_API_KEY) return fallback;
+
+    try {
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${GROQ_API_KEY}`,
+            },
+            body: JSON.stringify({
+                model: GROQ_MODEL,
+                temperature: 0.7,
+                max_tokens: 3000,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt },
+                ],
+            }),
+        });
+
+        if (!response.ok) {
+            return fallback;
+        }
+
+        const data = (await response.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+        };
+
+        return data.choices?.[0]?.message?.content ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
 async function callSemanticInterpretation(output: IntelligenceOutput): Promise<SemanticInterpretation> {
     const topNodes = getTopNodes(output.metrics.node_metrics, 15).map((n) => ({
         node_id: n.node_id,
@@ -835,35 +870,34 @@ export async function answerQuestionFromReport(
 ): Promise<string> {
     const q = question.trim().toLowerCase();
 
-    const getMarkdownSection = (heading: string): string => {
-        const lines = report.report_markdown.split("\n");
-        const start = lines.findIndex((line) => line.trim() === heading);
-        if (start === -1) return "";
-
-        const content: string[] = [];
-        for (let i = start + 1; i < lines.length; i += 1) {
-            const line = lines[i];
-            if (line.startsWith("## ")) break;
-            content.push(line);
-        }
-
-        return content.join("\n").trim();
-    };
-
     if (!q) {
         return report.summary;
     }
 
-    if (shouldUseAI()) {
-        const fallback = `${report.summary} Ask about risk, priority, or implementation plan for more focused guidance.`;
-        const ai = await callGroqJSON<{ answer: string }>(
-            "You are an architecture assistant. Reply with JSON: {\"answer\":\"...\"}.",
-            `Answer based only on this report.\n\nREPORT:\n${report.report_markdown}\n\nQUESTION:\n${question}`,
-            { answer: fallback }
-        );
-        return ai.answer;
+    // Always use LLM for chat if key is available — independent of REPORT_MODE
+    if (GROQ_API_KEY) {
+        const systemPrompt = `You are a senior software architect explaining code analysis results to a developer in a friendly chat.
+
+Rules:
+- Use VERY SIMPLE language — imagine explaining to a 2nd year engineering student.
+- Translate technical terms into everyday language with real-world analogies.
+- Be conversational, friendly, and encouraging — like a helpful mentor.
+- Keep answers focused and concise (3-6 sentences) unless more detail is genuinely needed.
+- Do NOT dump raw metrics or long lists — pick the most important thing and explain it well.
+- If the question is about "problems" or "issues", explain WHY they are problems in practical terms.`;
+
+        const userPrompt = `Here is the architecture analysis report for this repository:
+
+${report.report_markdown}
+
+The developer is asking: "${question}"
+
+Answer their specific question simply and helpfully. Be like a mentor, not a report printer.`;
+
+        return callGroqText(systemPrompt, userPrompt, report.summary);
     }
 
+    // Deterministic fallback (no GROQ key)
     if (
         q.includes("runtime") ||
         q.includes("bottleneck") ||
@@ -871,55 +905,15 @@ export async function answerQuestionFromReport(
         q.includes("fail") ||
         q.includes("blast")
     ) {
-        const blastSection = getMarkdownSection("## 6) Blast Radius Reasoning");
-        const blastLine = blastSection
-            .split("\n")
-            .map((line) => line.trim())
-            .find((line) => /^\d+\./.test(line));
-
-        if (blastLine) {
-            return `Most likely first runtime break: ${blastLine}`;
-        }
-
         const top = report.implementation_plan[0];
-        if (!top) {
-            return "No high-priority bottleneck was identified in the current report. Re-run analysis and ask for blast-radius details.";
-        }
-
-        const firstSteps = top.steps.slice(0, 2).join(" Then ");
-        return [
-            `Most likely first runtime break is around the highest-impact dependency behind \"${top.title}\".`,
-            "When that bottleneck fails, expect the first visible symptom to be latency spikes or request failures propagating to upstream callers.",
-            `Mitigation path: ${firstSteps}.`,
-        ].join(" ");
+        if (!top) return "No high-priority bottleneck was identified in the current report.";
+        return `Most likely first runtime break is around "${top.title}". ${top.reason} Mitigation: ${top.steps.slice(0, 2).join(". ")}`;
     }
 
-    if (
-        q.includes("what do i do") ||
-        q.includes("next step") ||
-        q.includes("action") ||
-        q.includes("benefit") ||
-        q.includes("valuable")
-    ) {
+    if (q.includes("what do i do") || q.includes("next step") || q.includes("action") || q.includes("start")) {
         const top = report.implementation_plan[0];
-        if (!top) {
-            return "Action now: enable weekly architecture scans, fail builds on new critical patterns, and trend risk score/repeated pattern count.";
-        }
-
-        const firstTwoSteps = top.steps.slice(0, 2);
-        const verify = top.steps[top.steps.length - 1].replace("Verify outcome: ", "");
-        return [
-            `Do this now: ${top.title}.`,
-            `1) ${firstTwoSteps[0]}`,
-            `2) ${firstTwoSteps[1]}`,
-            `This helps because: ${top.expected_impact}.`,
-            `You will know it worked when: ${verify}`,
-        ].join(" ");
-    }
-
-    if (q.includes("first") || q.includes("priority") || q.includes("start")) {
-        const top = report.implementation_plan[0];
-        return `Start with ${top.title}. Why: ${top.reason} Effort: ${top.effort}. Expected impact: ${top.expected_impact}.`;
+        if (!top) return "Run weekly architecture scans and fail builds on new critical patterns.";
+        return `Start with: ${top.title}. ${top.expected_impact}. First steps: ${top.steps.slice(0, 2).join(". ")}`;
     }
 
     if (q.includes("risk") || q.includes("problem") || q.includes("issue")) {
@@ -929,13 +923,47 @@ export async function answerQuestionFromReport(
     if (q.includes("plan") || q.includes("implement") || q.includes("fix")) {
         return report.implementation_plan
             .slice(0, 3)
-            .map((item, idx) => `${idx + 1}) ${item.priority} ${item.title} - ${item.reason}`)
-            .join(" ");
+            .map((item, idx) => `${idx + 1}) ${item.priority} ${item.title} — ${item.reason}`)
+            .join(" | ");
     }
 
-    if (q.includes("ai") || q.includes("llm") || q.includes("handoff")) {
-        return "Use the LLM handoff block from this response. It contains structured implementation priorities and constraints for coding assistants.";
-    }
+    return `${report.summary} Ask about risks, priorities, or specific files for more detail.`;
+}
 
-    return `${report.summary} Ask about risk, priority, or implementation plan for more focused guidance.`;
+
+export async function generateSimpleReport(report: ReportPayload): Promise<string> {
+    const systemPrompt = "You are a senior software architect reviewing a codebase analysis report.";
+    const userPrompt = `I will provide you with an architecture intelligence report generated by a tool.
+
+Your task:
+1. Explain the report in VERY SIMPLE language (as if explaining to a 2nd year engineering student).
+2. Identify the REAL root problems behind the metrics (not just repeat the report).
+3. Translate technical terms like "risk concentration", "deep dependency chain", "god service" into practical meaning.
+4. Give real-world analogies wherever possible.
+5. Provide a simple actionable summary.
+6. End with 3 clear next steps the developer should do THIS WEEK.
+
+Do not be overly technical. Keep it engaging, educational, and easy to read. Format nicely in Markdown with clear headers and bullet points.
+
+Here is the report:
+${report.report_markdown}`;
+
+    const simpleSection = GROQ_API_KEY
+        ? await callGroqText(systemPrompt, userPrompt, "")
+        : "";
+
+    // Combine: friendly summary first, then full technical report appended
+    const separator = `
+
+---
+
+# 📊 Full Technical Report
+
+> The following is the complete deterministic analysis generated by the ArchSight Intelligence Engine.
+
+`;
+
+    return simpleSection
+        ? `${simpleSection}${separator}${report.report_markdown}`
+        : report.report_markdown;
 }

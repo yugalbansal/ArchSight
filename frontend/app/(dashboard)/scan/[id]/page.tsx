@@ -427,12 +427,10 @@ export default function ScanResultPage() {
     const [isReanalyzing, setIsReanalyzing] = useState(false);
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["http_endpoint", "db_operation", "business_logic_service", "external_service", "queue_worker", "file_structure"]));
-    const [activeTab, setActiveTab] = useState<'codescan' | 'explorer' | 'archmap' | 'risksight'>('codescan');
+    const [activeTab, setActiveTab] = useState<'codescan' | 'explorer' | 'archmap' | 'risksight' | 'copilot'>('codescan');
     const [chatInput, setChatInput] = useState("");
-    const [chatReply, setChatReply] = useState<string | null>(null);
+    const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([]);
     const [chatReportMarkdown, setChatReportMarkdown] = useState<string>("");
-    const [chatPlan, setChatPlan] = useState<ReportPlanItem[]>([]);
-    const [llmHandoffMarkdown, setLlmHandoffMarkdown] = useState<string>("");
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [chatError, setChatError] = useState<string | null>(null);
 
@@ -529,7 +527,8 @@ export default function ScanResultPage() {
     const requestIntelligenceChat = async (mode: "full_report" | "qa") => {
         if (!id || isChatLoading) return;
 
-        if (mode === "qa" && !chatInput.trim()) {
+        const question = chatInput.trim();
+        if (mode === "qa" && !question) {
             setChatError("Enter a question first.");
             return;
         }
@@ -537,12 +536,18 @@ export default function ScanResultPage() {
         setIsChatLoading(true);
         setChatError(null);
 
+        // Optimistically add user message
+        if (mode === "qa") {
+            setChatMessages(prev => [...prev, { role: 'user', text: question }]);
+            setChatInput("");
+        }
+
         try {
             const res = await fetchWithAuth(`${API_URL}/api/intelligence/${id}/chat`, {
                 method: "POST",
                 body: JSON.stringify({
                     mode,
-                    message: mode === "qa" ? chatInput.trim() : "",
+                    message: mode === "qa" ? question : "",
                 }),
             });
 
@@ -552,13 +557,19 @@ export default function ScanResultPage() {
             }
 
             const data = payload as IntelligenceChatResponse;
-            setChatReply(data.reply || null);
-            setChatReportMarkdown(data.report_markdown || "");
-            setChatPlan(Array.isArray(data.implementation_plan) ? data.implementation_plan : []);
-            setLlmHandoffMarkdown(data.llm_handoff_markdown || "");
+            if (mode === "qa") {
+                setChatMessages(prev => [...prev, { role: 'ai', text: data.reply || "I could not find a clear answer for that." }]);
+            } else {
+                // full_report: show in markdown area
+                setChatReportMarkdown(data.report_markdown || "");
+                setChatMessages(prev => [...prev, { role: 'ai', text: "✅ Full simplified report generated below! You can download it as a Markdown file." }]);
+            }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Unknown chat/report error";
             setChatError(msg);
+            if (mode === "qa") {
+                setChatMessages(prev => [...prev, { role: 'ai', text: `⚠️ ${msg}` }]);
+            }
         } finally {
             setIsChatLoading(false);
         }
@@ -588,17 +599,53 @@ export default function ScanResultPage() {
         });
     };
 
-    // ─── Loading State ───────────────────────────────────────────────
+    // ─── Loading State (Skeleton) ────────────────────────────────────
     if (isLoading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] bg-[#0A0A0F]">
-                <div className="w-16 h-16 mb-6 relative">
-                    <div className="absolute inset-0 rounded-full border-t-2 border-[#6C63FF] animate-spin opacity-50" style={{ animationDuration: '2s' }}></div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <Activity className="w-6 h-6 text-[#6C63FF] animate-pulse" />
+            <div className="min-h-screen bg-[#0A0A0F] p-6 lg:p-12">
+                <div className="max-w-[1200px] mx-auto space-y-8">
+                    {/* Header skeleton */}
+                    <div className="flex items-center gap-4 pb-6 border-b border-[#1E1E2E]">
+                        <div className="w-10 h-10 rounded-xl bg-[#1E1E2E] animate-pulse shrink-0" />
+                        <div className="space-y-2">
+                            <div className="h-7 w-64 bg-[#1E1E2E] rounded-xl animate-pulse" />
+                            <div className="h-4 w-40 bg-[#1E1E2E] rounded animate-pulse opacity-50" />
+                        </div>
+                    </div>
+
+                    {/* Metric cards skeleton */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        {[...Array(5)].map((_, i) => (
+                            <div key={i} className="bg-[#13131E] p-5 rounded-2xl border border-[#1E1E2E] space-y-3">
+                                <div className="w-10 h-10 rounded-xl bg-[#1E1E2E] animate-pulse" />
+                                <div className="h-3 w-16 bg-[#1E1E2E] rounded animate-pulse opacity-50" />
+                                <div className="h-6 w-12 bg-[#1E1E2E] rounded animate-pulse" />
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Main layout skeleton: sidebar + content */}
+                    <div className="flex gap-6">
+                        {/* Sidebar */}
+                        <div className="w-64 shrink-0 space-y-2">
+                            {[...Array(5)].map((_, i) => (
+                                <div key={i} className="h-12 rounded-xl bg-[#1E1E2E] animate-pulse" style={{ opacity: 1 - i * 0.12 }} />
+                            ))}
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 space-y-4">
+                            <div className="h-8 w-48 bg-[#1E1E2E] rounded animate-pulse" />
+                            <div className="grid grid-cols-3 gap-3">
+                                {[...Array(6)].map((_, i) => (
+                                    <div key={i} className="h-24 bg-[#13131E] rounded-2xl border border-[#1E1E2E] animate-pulse" />
+                                ))}
+                            </div>
+                            <div className="h-48 bg-[#13131E] rounded-2xl border border-[#1E1E2E] animate-pulse" />
+                            <div className="h-32 bg-[#13131E] rounded-2xl border border-[#1E1E2E] animate-pulse opacity-60" />
+                        </div>
                     </div>
                 </div>
-                <p className="text-[#A0A0C0] font-mono text-sm tracking-wide">Resolving scan context...</p>
+                <style dangerouslySetInnerHTML={{ __html: `@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }` }} />
             </div>
         );
     }
@@ -764,91 +811,103 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
-                {/* ─── Tabs ──────────────────────────────────────────── */}
+                {/* ─── Main Layout: Sidebar + Content ──────────────────────────────────── */}
                 {result && (
-                    <div className="border-b border-[#1E1E2E]">
-                        <nav className="-mb-px flex space-x-8">
-                            {/* Tab 1 ── CodeScan */}
+                    <div className="flex flex-col lg:flex-row gap-6">
+                        {/* ── Vertical Sidebar ── */}
+                        <div className="w-full lg:w-64 shrink-0 space-y-2">
                             <button
                                 onClick={() => setActiveTab('codescan')}
-                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
                                     activeTab === 'codescan'
-                                        ? 'border-[#6C63FF] text-[#6C63FF]'
-                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                        ? 'bg-[#6C63FF]/10 text-[#6C63FF] border border-[#6C63FF]/30 shadow-[0_0_15px_rgba(108,99,255,0.1)]'
+                                        : 'text-[#A0A0C0] hover:bg-[#1E1E2E] hover:text-white border border-transparent'
                                 }`}
                             >
-                                <span className="flex items-center gap-2">
+                                <div className="flex items-center gap-3">
                                     <Network className="h-4 w-4" />
-                                    <span>CodeScan</span>
-                                    <span className="text-[10px] font-mono opacity-50">Semantic Engine</span>
-                                </span>
+                                    <span className="font-semibold text-sm">CodeScan</span>
+                                </div>
                             </button>
 
-                            {/* Tab 1b ── Explorer */}
                             <button
                                 onClick={() => setActiveTab('explorer')}
-                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
                                     activeTab === 'explorer'
-                                        ? 'border-[#F59E0B] text-[#F59E0B]'
-                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                        ? 'bg-[#F59E0B]/10 text-[#F59E0B] border border-[#F59E0B]/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
+                                        : 'text-[#A0A0C0] hover:bg-[#1E1E2E] hover:text-white border border-transparent'
                                 }`}
                             >
-                                <span className="flex items-center gap-2">
+                                <div className="flex items-center gap-3">
                                     <FolderTree className="h-4 w-4" />
-                                    <span>Explorer</span>
-                                    <span className="text-[10px] font-mono opacity-50">File Inspector</span>
-                                    {arch?.file_structure && arch.file_structure.length > 0 && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-mono border bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30">
-                                            {arch.file_structure.length}
-                                        </span>
-                                    )}
-                                </span>
+                                    <span className="font-semibold text-sm">Explorer</span>
+                                </div>
+                                {arch?.file_structure && arch.file_structure.length > 0 && (
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${activeTab === 'explorer' ? 'bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/30' : 'bg-[#1E1E2E] text-[#5A5A7A] border-[#2E2E3E]'}`}>
+                                        {arch.file_structure.length}
+                                    </span>
+                                )}
                             </button>
 
-                            {/* Tab 2 ── ArchMap */}
                             <button
                                 onClick={() => setActiveTab('archmap')}
-                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
                                     activeTab === 'archmap'
-                                        ? 'border-[#00D4FF] text-[#00D4FF]'
-                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                        ? 'bg-[#00D4FF]/10 text-[#00D4FF] border border-[#00D4FF]/30 shadow-[0_0_15px_rgba(0,212,255,0.1)]'
+                                        : 'text-[#A0A0C0] hover:bg-[#1E1E2E] hover:text-white border border-transparent'
                                 }`}
                             >
-                                <span className="flex items-center gap-2">
+                                <div className="flex items-center gap-3">
                                     <GitFork className="h-4 w-4" />
-                                    <span>ArchMap</span>
-                                    <span className="text-[10px] font-mono opacity-50">Dependency Graph</span>
-                                </span>
+                                    <span className="font-semibold text-sm">ArchMap</span>
+                                </div>
                             </button>
 
-                            {/* Tab 3 ── RiskSight */}
                             <button
                                 onClick={() => setActiveTab('risksight')}
-                                className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
                                     activeTab === 'risksight'
-                                        ? 'border-[#A855F7] text-[#A855F7]'
-                                        : 'border-transparent text-[#A0A0C0] hover:text-white hover:border-[#A0A0C0]'
+                                        ? 'bg-[#A855F7]/10 text-[#A855F7] border border-[#A855F7]/30 shadow-[0_0_15px_rgba(168,85,247,0.1)]'
+                                        : 'text-[#A0A0C0] hover:bg-[#1E1E2E] hover:text-white border border-transparent'
                                 }`}
                             >
-                                <span className="flex items-center gap-2">
+                                <div className="flex items-center gap-3">
                                     <ShieldAlert className="h-4 w-4" />
-                                    <span>RiskSight</span>
-                                    <span className="text-[10px] font-mono opacity-50">Intelligence Engine</span>
-                                    {intel && (
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono border ${
-                                            intel.overall_risk_level === 'critical' ? 'bg-[#FF2D55]/10 text-[#FF2D55] border-[#FF2D55]/30' :
-                                            intel.overall_risk_level === 'high' ? 'bg-[#FF4C6A]/10 text-[#FF4C6A] border-[#FF4C6A]/30' :
-                                            intel.overall_risk_level === 'medium' ? 'bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30' :
-                                            'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/30'
-                                        }`}>
-                                            {intel.overall_risk_level.toUpperCase()}
-                                        </span>
-                                    )}
-                                </span>
+                                    <span className="font-semibold text-sm">RiskSight</span>
+                                </div>
+                                {intel && (
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${
+                                        intel.overall_risk_level === 'critical' ? 'bg-[#FF2D55]/10 text-[#FF2D55] border-[#FF2D55]/30' :
+                                        intel.overall_risk_level === 'high' ? 'bg-[#FF4C6A]/10 text-[#FF4C6A] border-[#FF4C6A]/30' :
+                                        intel.overall_risk_level === 'medium' ? 'bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30' :
+                                        'bg-[#22C55E]/10 text-[#22C55E] border-[#22C55E]/30'
+                                    }`}>
+                                        {intel.overall_risk_level.toUpperCase()}
+                                    </span>
+                                )}
                             </button>
-                        </nav>
-                    </div>
-                )}
+
+                            <button
+                                onClick={() => setActiveTab('copilot')}
+                                className={`relative w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all mt-4 border ${
+                                    activeTab === 'copilot'
+                                        ? 'bg-gradient-to-r from-[#A855F7]/20 to-[#FF4C6A]/20 text-white border-[#A855F7]/50 shadow-[0_0_20px_rgba(168,85,247,0.2)]'
+                                        : 'bg-gradient-to-r from-[#A855F7]/5 to-[#FF4C6A]/5 text-[#E2E8F0] hover:from-[#A855F7]/10 hover:to-[#FF4C6A]/10 border-[#A855F7]/20 hover:border-[#A855F7]/40'
+                                }`}
+                            >
+                                <div className="absolute -top-3 -right-2 flex h-4 w-4">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#A855F7] opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-4 w-4 bg-[#A855F7] border-2 border-[#0A0A0F]"></span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <Lightbulb className={`h-4 w-4 ${activeTab === 'copilot' ? 'text-white' : 'text-[#A855F7]'}`} />
+                                    <span className="font-semibold text-sm">AI Copilot</span>
+                                </div>
+                            </button>
+                        </div>
+
+                        {/* ── Right Content Area ── */}
+                        <div className="flex-1 min-w-0 border-l-0 lg:border-l border-[#1E1E2E] pl-0 lg:pl-8 pt-6 lg:pt-0">
 
                 {/* ─── Tab Content: ArchMap — Dependency Graph ──────────── */}
                 {result && activeTab === 'archmap' && (
@@ -881,108 +940,140 @@ export default function ScanResultPage() {
                     </div>
                 )}
 
-                {/* ─── Tab Content: RiskSight — Intelligence Engine ─────── */}
-                {result && activeTab === 'risksight' && intel && (
-                    <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+                {/* ─── Tab Content: AI Copilot ─────── */}
+                {result && activeTab === 'copilot' && intel && (
+                    <div className="space-y-5 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+                                    <Lightbulb className="h-5 w-5 text-[#A855F7]" />
+                                    Intelligence Copilot
+                                </h3>
+                                <p className="text-[#5A5A7A] text-xs mt-0.5">Ask anything about your codebase in plain English</p>
+                            </div>
+                            <button
+                                onClick={() => requestIntelligenceChat("full_report")}
+                                disabled={isChatLoading}
+                                className="flex items-center gap-2 bg-gradient-to-r from-[#A855F7] to-[#6C63FF] hover:opacity-90 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
+                            >
+                                <FileOutput className="h-3.5 w-3.5" />
+                                {isChatLoading ? "Generating..." : "Generate Full Report"}
+                            </button>
+                        </div>
 
-                        {/* Intelligence Copilot */}
-                        <div className="rounded-2xl p-6 bg-[#13131E] border border-[#1E1E2E]">
-                            <div className="flex items-center justify-between mb-4 gap-4">
-                                <div>
-                                    <h3 className="text-white font-semibold text-lg">Intelligence Copilot</h3>
-                                    <p className="text-[#A0A0C0] text-sm">Ask in plain language or generate a full report with implementation plan.</p>
-                                </div>
-                                <button
-                                    onClick={() => requestIntelligenceChat("full_report")}
-                                    disabled={isChatLoading}
-                                    className="bg-[#6C63FF] hover:bg-[#5a52e8] disabled:opacity-60 text-white text-sm font-semibold px-4 py-2 rounded-lg"
-                                >
-                                    {isChatLoading ? "Generating..." : "Generate Full Report"}
-                                </button>
+                        {/* Chat Bubble Window */}
+                        <div className="rounded-2xl bg-[#0D0D15] border border-[#1E1E2E] overflow-hidden flex flex-col" style={{ minHeight: '360px' }}>
+                            {/* Messages Area */}
+                            <div className="flex-1 p-5 space-y-4 overflow-y-auto" style={{ maxHeight: '400px' }}>
+                                {chatMessages.length === 0 && !isChatLoading && (
+                                    <div className="flex flex-col items-center justify-center h-40 text-center gap-3">
+                                        <div className="w-12 h-12 rounded-full bg-[#A855F7]/10 border border-[#A855F7]/20 flex items-center justify-center">
+                                            <Lightbulb className="h-5 w-5 text-[#A855F7]" />
+                                        </div>
+                                        <div>
+                                            <p className="text-[#E2E8F0] font-medium text-sm">Ask me anything about your repo</p>
+                                            <p className="text-[#5A5A7A] text-xs mt-1">e.g. "What are the biggest problems?" or "Where should I start?"</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {chatMessages.map((msg, idx) => (
+                                    <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        {msg.role === 'ai' && (
+                                            <div className="w-8 h-8 rounded-full bg-[#A855F7]/15 border border-[#A855F7]/30 flex items-center justify-center shrink-0 mt-0.5">
+                                                <Lightbulb className="h-4 w-4 text-[#A855F7]" />
+                                            </div>
+                                        )}
+                                        <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                            msg.role === 'user'
+                                                ? 'bg-[#6C63FF]/15 text-[#E2E8F0] border border-[#6C63FF]/20 rounded-br-sm'
+                                                : 'bg-[#1E1E2E] text-[#E2E8F0] border border-[#2A2A3A] rounded-bl-sm'
+                                        }`}>
+                                            <p className="whitespace-pre-wrap">{msg.text}</p>
+                                        </div>
+                                        {msg.role === 'user' && (
+                                            <div className="w-8 h-8 rounded-full bg-[#6C63FF]/15 border border-[#6C63FF]/30 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold text-[#6C63FF]">
+                                                Y
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                                {isChatLoading && (
+                                    <div className="flex gap-3 justify-start">
+                                        <div className="w-8 h-8 rounded-full bg-[#A855F7]/15 border border-[#A855F7]/30 flex items-center justify-center shrink-0">
+                                            <Lightbulb className="h-4 w-4 text-[#A855F7]" />
+                                        </div>
+                                        <div className="bg-[#1E1E2E] border border-[#2A2A3A] rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: '0ms' }} />
+                                            <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: '150ms' }} />
+                                            <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: '300ms' }} />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="flex flex-col md:flex-row gap-3">
-                                <textarea
+                            {/* Input Area */}
+                            <div className="border-t border-[#1E1E2E] p-3 flex gap-2 bg-[#0A0A0F]">
+                                <input
                                     value={chatInput}
                                     onChange={(e) => setChatInput(e.target.value)}
-                                    placeholder="Example: what should we fix first in simple language?"
-                                    className="w-full h-24 bg-[#0A0A0F] border border-[#1E1E2E] text-[#E2E8F0] rounded-xl p-3 text-sm outline-none focus:border-[#6C63FF]"
+                                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); requestIntelligenceChat('qa'); } }}
+                                    placeholder="Ask a question about your codebase..."
+                                    className="flex-1 bg-[#13131E] border border-[#1E1E2E] focus:border-[#A855F7]/50 text-[#E2E8F0] rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-[#3E3E5E] transition-colors"
+                                    disabled={isChatLoading}
                                 />
                                 <button
                                     onClick={() => requestIntelligenceChat("qa")}
-                                    disabled={isChatLoading}
-                                    className="md:w-44 bg-[#00D4FF]/10 hover:bg-[#00D4FF]/20 border border-[#00D4FF]/30 text-[#00D4FF] text-sm font-semibold px-4 py-2 rounded-lg h-fit"
+                                    disabled={isChatLoading || !chatInput.trim()}
+                                    className="bg-[#A855F7] hover:bg-[#9333ea] disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all"
                                 >
-                                    {isChatLoading ? "Thinking..." : "Ask Copilot"}
+                                    Ask
                                 </button>
                             </div>
-
-                            {chatError && (
-                                <p className="mt-3 text-[#FF4C6A] text-sm">{chatError}</p>
-                            )}
-
-                            {chatReply && (
-                                <div className="mt-4 p-4 rounded-xl bg-[#0A0A0F] border border-[#1E1E2E]">
-                                    <p className="text-[#E2E8F0] text-sm leading-relaxed whitespace-pre-wrap">{chatReply}</p>
-                                </div>
-                            )}
-
-                            {chatPlan.length > 0 && (
-                                <div className="mt-4 space-y-3">
-                                    <h4 className="text-white font-semibold">Implementation Plan</h4>
-                                    {chatPlan.map((item, idx) => (
-                                        <div key={`${item.title}-${idx}`} className="p-4 rounded-xl bg-[#0A0A0F] border border-[#1E1E2E]">
-                                            <p className="text-[#E2E8F0] text-sm font-semibold">{idx + 1}. {item.priority} - {item.title}</p>
-                                            <p className="text-[#A0A0C0] text-sm mt-1">{item.reason}</p>
-                                            <p className="text-[#5A5A7A] text-xs mt-2">Effort: {item.effort} | Impact: {item.expected_impact}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {chatReportMarkdown && (
-                                <div className="mt-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <h4 className="text-white font-semibold">Report Markdown</h4>
-                                        <button
-                                            onClick={async () => {
-                                                try {
-                                                    await navigator.clipboard.writeText(chatReportMarkdown);
-                                                } catch {
-                                                    // ignore clipboard failures
-                                                }
-                                            }}
-                                            className="text-xs font-mono bg-[#1E1E2E] hover:bg-[#2A2A3A] text-[#A0A0C0] px-2 py-1 rounded border border-[#2A2A3A]"
-                                        >
-                                            Copy
-                                        </button>
-                                    </div>
-                                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#A0A0C0] bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-3">{chatReportMarkdown}</pre>
-                                </div>
-                            )}
-
-                            {llmHandoffMarkdown && (
-                                <div className="mt-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <h4 className="text-white font-semibold">LLM Handoff Block</h4>
-                                        <button
-                                            onClick={async () => {
-                                                try {
-                                                    await navigator.clipboard.writeText(llmHandoffMarkdown);
-                                                } catch {
-                                                    // ignore clipboard failures
-                                                }
-                                            }}
-                                            className="text-xs font-mono bg-[#1E1E2E] hover:bg-[#2A2A3A] text-[#A0A0C0] px-2 py-1 rounded border border-[#2A2A3A]"
-                                        >
-                                            Copy
-                                        </button>
-                                    </div>
-                                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs text-[#A0A0C0] bg-[#0A0A0F] border border-[#1E1E2E] rounded-xl p-3">{llmHandoffMarkdown}</pre>
-                                </div>
-                            )}
                         </div>
 
+                        {/* Full Report Markdown (only shown after Generate Full Report) */}
+                        {chatReportMarkdown && (
+                            <div className="rounded-2xl bg-[#0D0D15] border border-[#A855F7]/20 overflow-hidden">
+                                <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E1E2E] bg-[#13131E]">
+                                    <span className="text-white font-semibold text-sm flex items-center gap-2">
+                                        <FileOutput className="h-4 w-4 text-[#A855F7]" />
+                                        Simplified Report
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => {
+                                                const blob = new Blob([chatReportMarkdown], { type: 'text/markdown' });
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `archsight-report-${scan.repo_name}-${scan._id.slice(-6)}.md`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                                URL.revokeObjectURL(url);
+                                            }}
+                                            className="text-xs font-mono bg-[#A855F7]/10 hover:bg-[#A855F7]/20 text-[#A855F7] px-3 py-1.5 rounded-lg border border-[#A855F7]/30 flex items-center gap-1.5"
+                                        >
+                                            <FileOutput className="h-3.5 w-3.5" /> Download .md
+                                        </button>
+                                        <button
+                                            onClick={async () => { try { await navigator.clipboard.writeText(chatReportMarkdown); } catch {} }}
+                                            className="text-xs font-mono bg-[#1E1E2E] hover:bg-[#2A2A3A] text-[#A0A0C0] px-3 py-1.5 rounded-lg border border-[#2A2A3A]"
+                                        >
+                                            Copy
+                                        </button>
+                                    </div>
+                                </div>
+                                <pre className="p-5 max-h-80 overflow-auto whitespace-pre-wrap text-sm text-[#E2E8F0] font-mono leading-relaxed">{chatReportMarkdown}</pre>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ─── Tab Content: RiskSight — Intelligence Engine ─────── */}
+                {result && activeTab === 'risksight' && intel && (
+                    <div className="space-y-6 reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
                         {/* ─── Insights as Filterable Log Table ─────────── */}
                         {intel.insights && intel.insights.length > 0 && (
                             <ScanLogsViewer
@@ -1456,6 +1547,10 @@ export default function ScanResultPage() {
 
                 </div>
                 )} {/* Close codescan tab content */}
+
+                        </div> {/* Close Right Content Area */}
+                    </div> /* Close Main Layout Sidebar + Content */
+                )}
             </div>
 
             <style dangerouslySetInnerHTML={{

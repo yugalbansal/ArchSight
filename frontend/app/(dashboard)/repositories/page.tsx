@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { FolderGit2, Loader2, ArrowRight, Github, RefreshCw, Activity, TerminalSquare, ShieldCheck, Box, Network, GitBranch, XCircle } from "lucide-react";
+import { FolderGit2, Loader2, ArrowRight, Github, RefreshCw, Activity, TerminalSquare, ShieldCheck, Box, Network, GitBranch, XCircle, Rocket, Cloud } from "lucide-react";
 import { fetchWithAuth, API_URL } from "@/lib/api";
 
 interface Repository {
@@ -101,32 +101,57 @@ export default function Repositories() {
 
             <div className="max-w-[1200px] mx-auto relative z-10 space-y-8">
 
-                {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 pb-6 border-b border-[#1E1E2E]">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-6 border-b border-[#1E1E2E]">
                     <div>
-                        <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
-                            <Github className="w-8 h-8 text-[#6C63FF]" />
-                            Connected Workspaces
-                        </h1>
-                        <p className="text-[#5A5A7A] text-sm">Select a repository to initiate synchronous AST evaluation and architecture mapping.</p>
+                        <h1 className="text-3xl font-bold text-white mb-2">Manage Repositories</h1>
+                        <p className="text-[#5A5A7A] text-sm">Efficiently organize and secure your codebases.</p>
                     </div>
-                    <div className="mt-4 md:mt-0 flex items-center gap-3">
-                        <button
-                            onClick={fetchRepos}
-                            disabled={isLoading}
-                            className="bg-[#13131E] hover:bg-[#1E1E2E] border border-[#1E1E2E] text-white font-medium py-2.5 px-4 rounded-xl transition flex items-center gap-2 text-sm shadow-sm"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin text-[#6C63FF]' : 'text-[#A0A0C0]'}`} />
-                            Sync Source
+                </div>
+
+                {/* Top Action Cards */}
+                <div className="grid md:grid-cols-2 gap-6 mb-10">
+                    {/* Manual Scan Card */}
+                    <div className="bg-[#13131E] border border-[#6C63FF]/30 p-8 rounded-2xl flex flex-col items-center text-center relative overflow-hidden group shadow-[0_0_30px_rgba(108,99,255,0.05)]">
+                        <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-[#6C63FF]/10 blur-[50px] rounded-full pointer-events-none" />
+                        <div className="w-16 h-16 rounded-2xl bg-[#6C63FF]/10 flex items-center justify-center mb-6 border border-[#6C63FF]/20 group-hover:scale-110 transition-transform duration-300">
+                            <Rocket className="w-8 h-8 text-[#A855F7]" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-3">Start Manual Scan</h2>
+                        <p className="text-[#A0A0C0] text-sm mb-8 px-4">Manually initiate a comprehensive security scan on selected repositories.</p>
+                        <button onClick={() => router.push('/scan')} className="w-full bg-gradient-to-r from-[#6C63FF] to-[#A855F7] hover:opacity-90 text-white font-semibold py-3.5 px-6 rounded-xl transition-all shadow-[0_0_20px_rgba(108,99,255,0.3)]">
+                            Scan Repositories
                         </button>
-                        <a
-                            href={`https://github.com/apps/${appSlug}/installations/new`}
-                            className="bg-[#6C63FF] hover:bg-[#6C63FF]/90 text-white font-semibold py-2.5 px-5 rounded-xl transition flex items-center gap-2 text-sm shadow-[0_0_20px_rgba(108,99,255,0.2)]"
-                        >
-                            <FolderGit2 className="h-4 w-4" />
-                            Install App
+                    </div>
+
+                    {/* Import Card */}
+                    <div className="bg-[#13131E] border border-[#00D4FF]/30 p-8 rounded-2xl flex flex-col items-center text-center relative overflow-hidden group shadow-[0_0_30px_rgba(0,212,255,0.05)]">
+                        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-[#00D4FF]/10 blur-[50px] rounded-full pointer-events-none" />
+                        <div className="flex gap-4 mb-6">
+                            <div className="w-16 h-16 rounded-2xl bg-[#00D4FF]/10 flex items-center justify-center border border-[#00D4FF]/20 group-hover:-translate-y-1 transition-transform duration-300">
+                                <Github className="w-8 h-8 text-white" />
+                            </div>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-3">Import from GitHub</h2>
+                        <p className="text-[#A0A0C0] text-sm mb-8 px-4">Seamlessly connect your existing Git accounts to manage projects.</p>
+                        <a href={`https://github.com/apps/${appSlug}/installations/new`} className="w-full bg-[#00D4FF]/20 hover:bg-[#00D4FF]/30 border border-[#00D4FF]/40 text-[#00D4FF] font-semibold py-3.5 px-6 rounded-xl transition-all shadow-[0_0_20px_rgba(0,212,255,0.1)] block">
+                            Import from GitHub
                         </a>
                     </div>
+                </div>
+
+                <div className="flex items-center justify-between mb-4 mt-8">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                        <FolderGit2 className="w-5 h-5 text-[#6C63FF]" />
+                        Connected Workspaces
+                    </h2>
+                    <button
+                        onClick={fetchRepos}
+                        disabled={isLoading}
+                        className="bg-[#13131E] hover:bg-[#1E1E2E] border border-[#1E1E2E] text-[#A0A0C0] hover:text-white font-medium py-2 px-3 rounded-lg transition flex items-center gap-2 text-sm shadow-sm"
+                    >
+                        <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin text-[#6C63FF]' : ''}`} />
+                        Sync Source
+                    </button>
                 </div>
 
                 {isLoading ? (

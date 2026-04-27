@@ -20,16 +20,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AnimatedNavLink } from "@/components/ui/sign-in-flow-1";
 
-export const navItems = [
-    { label: "Overview", icon: LayoutDashboard, path: "/dashboard", disabled: false },
-    { label: "Repositories", icon: FolderGit2, path: "/repositories", disabled: false },
-    { label: "New Scan", icon: ScanSearch, path: "/scan", disabled: false },
-    { label: "Settings", icon: Settings, path: "/settings", disabled: false },
-    { label: "Docs", icon: FileText, path: "/docs", disabled: false },
-];
+
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
-    const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const pathname = usePathname();
     const { data: session } = useSession();
@@ -74,8 +67,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                         {[
                             { label: "Dashboard", href: "/dashboard" },
                             { label: "Repositories", href: "/repositories" },
-                            { label: "Scan", href: "/scan" },
-                            { label: "Gallery", href: "/insights" },
+                            { label: "Docs", href: "/docs" },
                         ].map((l) => (
                             <AnimatedNavLink key={l.label} href={l.href}>
                                 {l.label}
@@ -147,93 +139,33 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             </header>
 
             <div className="flex flex-1 overflow-hidden">
-                {/* Mobile overlay */}
+                {/* Mobile Navigation Menu */}
                 {mobileOpen && (
-                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-30 lg:hidden" onClick={() => setMobileOpen(false)} />
-                )}
-
-                {/* ── SIDEBAR ─────────────────────────────── */}
-                <aside className={cn(
-                    "border-r border-[#1E1E2E] bg-[#0A0A0F]/95 backdrop-blur-md flex flex-col shrink-0 transition-all duration-300 z-40",
-                    collapsed ? "w-16" : "w-60",
-                    mobileOpen ? "fixed inset-y-0 left-0 top-16" : "hidden lg:flex"
-                )}>
-
-                    {/* Collapse toggle */}
-                    <div className="flex items-center justify-end px-3 py-3 border-b border-[#1E1E2E]">
-                        <button
-                            onClick={() => { setCollapsed(!collapsed); setMobileOpen(false); }}
-                            className="p-1.5 rounded-lg text-[#5A5A7A] hover:text-white hover:bg-white/5 transition-all"
-                        >
-                            <ChevronLeft className={cn("h-4 w-4 transition-transform duration-300", collapsed && "rotate-180")} />
-                        </button>
-                    </div>
-
-                    <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-                        {navItems.map((item) => {
-                            const active = pathname === item.path || (item.path === "/repositories" && pathname.startsWith("/repositories"));
-
-                            if (item.disabled) {
-                                return (
-                                    <div
-                                        key={item.label}
-                                        title={collapsed ? `${item.label} (Coming soon)` : "Coming soon"}
-                                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-[#2E2E4E] cursor-not-allowed"
-                                    >
-                                        <item.icon className="h-4 w-4 shrink-0" />
-                                        {!collapsed && <span className="truncate">{item.label}</span>}
-                                        {!collapsed && (
-                                            <span className="ml-auto text-[9px] uppercase tracking-wider font-bold text-[#2E2E4E] bg-[#1E1E2E] px-1.5 py-0.5 rounded">Soon</span>
-                                        )}
-                                    </div>
-                                );
-                            }
-
-                            return (
-                                <Link
-                                    key={item.label}
-                                    href={item.path}
-                                    title={collapsed ? item.label : undefined}
+                    <div className="fixed inset-0 z-30 lg:hidden bg-[#0A0A0F]/95 backdrop-blur-md pt-20 px-6">
+                        <nav className="flex flex-col gap-4">
+                            {[
+                                { label: "Dashboard", href: "/dashboard" },
+                                { label: "Repositories", href: "/repositories" },
+                                { label: "Docs", href: "/docs" },
+                            ].map((l) => (
+                                <Link 
+                                    key={l.label} 
+                                    href={l.href}
                                     onClick={() => setMobileOpen(false)}
-                                    className={cn(
-                                        "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative",
-                                        active
-                                            ? "bg-white/8 text-white border-l-2 border-white/60 pl-[10px]"
-                                            : "text-[#5A5A7A] hover:text-white hover:bg-white/5 border-l-2 border-transparent pl-[10px]"
-                                    )}
+                                    className="text-lg font-semibold text-white py-2 border-b border-[#1E1E2E]"
                                 >
-                                    <item.icon className={cn("h-4 w-4 shrink-0 transition-colors", active ? "text-white" : "group-hover:text-white")} />
-                                    {!collapsed && <span className="truncate">{item.label}</span>}
-                                    {active && !collapsed && (
-                                        <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/60" />
-                                    )}
+                                    {l.label}
                                 </Link>
-                            );
-                        })}
-                    </nav>
-
-                    {/* Bottom upgrade banner */}
-                    {!collapsed && (
-                        <div className="p-3 border-t border-[#1E1E2E]">
-                            <div className="rounded-xl bg-[#1A1A24] border border-white/5 p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Sparkles className="w-4 h-4 text-white/40" />
-                                    <span className="text-white/70 text-xs font-bold">Pro Features</span>
-                                </div>
-                                <p className="text-[10px] text-[#5A5A7A] leading-relaxed mb-3">Cost engine, AI insights and team workspaces coming soon.</p>
-                                <button disabled className="w-full bg-white/5 text-white/30 text-[11px] font-semibold rounded-lg py-1.5 cursor-not-allowed border border-white/10 opacity-60">
-                                    Coming Soon
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </aside>
+                            ))}
+                        </nav>
+                    </div>
+                )}
 
                 {/* ── MAIN CONTENT ─────────────────────────── */}
                 <main className="flex-1 overflow-auto bg-[#0A0A0F]">
                     {/* Ambient glow */}
                     <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-[#6C63FF] opacity-[0.03] rounded-full blur-[150px] pointer-events-none z-0" />
-                    <div className="relative z-10 p-6 lg:p-8">
+                    <div className="relative z-10 p-6 lg:p-8 max-w-[1400px] mx-auto">
                         {children}
                     </div>
                 </main>

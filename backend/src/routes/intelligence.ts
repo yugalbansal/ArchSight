@@ -6,6 +6,7 @@ import {
     analyzeArchitecture,
     buildReportPayload,
     answerQuestionFromReport,
+    generateSimpleReport,
 } from "../engines/intelligence_engine/index.js";
 import type { ArchitectureGraph } from "../schemas/architecture-graph.schema.js";
 import type {
@@ -154,10 +155,15 @@ router.post("/:scanId/chat", async (req, res) => {
         const report = await buildReportPayload(output, repoFullName, branch);
         const reply = mode === "qa" ? await answerQuestionFromReport(message, report) : report.summary;
 
+        let finalMarkdown = report.report_markdown;
+        if (mode === "full_report") {
+            finalMarkdown = await generateSimpleReport(report);
+        }
+
         return res.status(200).json({
             reply,
             mode,
-            report_markdown: report.report_markdown,
+            report_markdown: finalMarkdown,
             implementation_plan: report.implementation_plan,
             llm_handoff_markdown: report.llm_handoff_markdown,
             source: {
