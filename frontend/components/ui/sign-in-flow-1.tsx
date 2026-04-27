@@ -244,11 +244,9 @@ const DotMatrix: React.FC<DotMatrixProps> = ({
 function ShaderMaterial({
   source,
   uniforms,
-  maxFps = 60,
 }: {
   source: string;
   hovered?: boolean;
-  maxFps?: number;
   uniforms: Uniforms;
 }) {
   const { size } = useThree();
@@ -338,6 +336,7 @@ function ShaderMaterial({
     });
 
     return materialObject;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.width, size.height, source]);
 
   return (
@@ -351,7 +350,7 @@ function ShaderMaterial({
 function Shader({ source, uniforms, maxFps = 60 }: ShaderProps) {
   return (
     <Canvas className="absolute inset-0  h-full w-full">
-      <ShaderMaterial source={source} uniforms={uniforms} maxFps={maxFps} />
+      <ShaderMaterial source={source} uniforms={uniforms} />
     </Canvas>
   );
 };
@@ -499,9 +498,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 
 export const SignInPage = ({ className, isSignUp = false }: SignInPageProps) => {
-  const [particleColor, setParticleColor] = useState('#6C63FF');
-  const frameCount = useRef(0);
-  const lastTime = useRef(performance.now());
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<"email" | "password" | "success">("email");
