@@ -347,7 +347,7 @@ function ShaderMaterial({
   );
 };
 
-function Shader({ source, uniforms, maxFps = 60 }: ShaderProps) {
+function Shader({ source, uniforms }: ShaderProps) {
   return (
     <Canvas className="absolute inset-0  h-full w-full">
       <ShaderMaterial source={source} uniforms={uniforms} />

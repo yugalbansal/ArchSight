@@ -1,5 +1,5 @@
 "use client";
-
+/* eslint-disable @next/next/no-img-element */
 import { Settings, Bell, ChevronRight, Github, Globe, Shield, Lock, User, Palette, Bell as BellIcon } from "lucide-react";
 import { useSession } from "next-auth/react";
 
