@@ -73,6 +73,7 @@ enum ScanStatus {
   detecting
   parsing
   extracting
+  analysing
   completed
   failed
 }
@@ -139,9 +140,10 @@ model Scan {
   errorMessage String?
   rawAst       Json?      // Stores the full ExtractedArchitecture JSONB if needed
   
-  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  nodes        ArchitectureNode[]
-  edges        ArchitectureEdge[]
+  repository           Repository           @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  nodes                ArchitectureNode[]
+  edges                ArchitectureEdge[]
+  intelligenceAnalysis IntelligenceAnalysis?
 
   @@index([repositoryId])
   @@index([status])
@@ -174,4 +176,28 @@ model ArchitectureEdge {
   toNode   ArchitectureNode @relation("ToNode", fields: [toNodeId], references: [id], onDelete: Cascade)
   
   @@index([scanId])
+}
+
+// ==========================================
+// INTELLIGENCE ENGINE
+// ==========================================
+
+model IntelligenceAnalysis {
+  id         String   @id @default(cuid())
+  scanId     String   @unique           // 1-to-1 with Scan
+  riskLevel  String                     // low | medium | high | critical
+  confidence String                     // low | medium | high
+  theme      String                     // plain-English architectural theme
+  metrics    Json                       // GraphMetrics object
+  patterns   Json                       // DetectedPattern[]
+  insights   Json                       // InsightItem[]
+  strategy   Json                       // refactor_strategy, scaling_outlook, etc.
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  scan Scan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@map("intelligence_analyses")
+  @@index([scanId])
+  @@index([riskLevel])
 }

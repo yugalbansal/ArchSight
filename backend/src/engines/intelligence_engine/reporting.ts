@@ -76,9 +76,16 @@ interface PriorityStrategy {
     refined_scaling_outlook: string;
 }
 
+import Cerebras from '@cerebras/cerebras_cloud_sdk';
+
 const REPORT_MODE = process.env.INTELLIGENCE_REPORT_MODE ?? "deterministic";
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
+const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
+const CEREBRAS_MODEL = process.env.CEREBRAS_MODEL ?? "qwen-3-235b-a22b-instruct-2507";
+
+const cerebrasClient = CEREBRAS_API_KEY ? new Cerebras({
+    apiKey: CEREBRAS_API_KEY,
+}) : null;
+
 
 function formatPatternName(type: string): string {
     return type
@@ -536,18 +543,34 @@ function buildActionCard(output: IntelligenceOutput, plan: ReportPlanItem[]): st
     ].join("\n");
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<T>((resolve) => {
+        timer = setTimeout(() => {
+            console.error(`[ArchSight Copilot] Cerebras API timed out after ${ms}ms`);
+            resolve(fallback);
+        }, ms);
+    });
+
+    return Promise.race([
+        promise.then((res) => {
+            clearTimeout(timer);
+            return res;
+        }).catch((err) => {
+            clearTimeout(timer);
+            throw err;
+        }),
+        timeoutPromise
+    ]);
+}
+
 async function callGroqJSON<T>(systemPrompt: string, userPrompt: string, fallback: T): Promise<T> {
-    if (!GROQ_API_KEY) return fallback;
+    if (!cerebrasClient) return fallback;
 
     try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${GROQ_API_KEY}`,
-            },
-            body: JSON.stringify({
-                model: GROQ_MODEL,
+        const completion = await withTimeout(
+            cerebrasClient.chat.completions.create({
+                model: CEREBRAS_MODEL,
                 temperature: 0.2,
                 max_tokens: 1800,
                 messages: [
@@ -555,17 +578,13 @@ async function callGroqJSON<T>(systemPrompt: string, userPrompt: string, fallbac
                     { role: "user", content: userPrompt },
                 ],
             }),
-        });
+            15000,
+            null
+        );
 
-        if (!response.ok) {
-            return fallback;
-        }
+        if (!completion) return fallback;
 
-        const data = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
-        };
-
-        const content = data.choices?.[0]?.message?.content ?? "";
+        const content = (completion as any).choices?.[0]?.message?.content ?? "";
         return safeParseJSON(content, fallback);
     } catch {
         return fallback;
@@ -573,17 +592,12 @@ async function callGroqJSON<T>(systemPrompt: string, userPrompt: string, fallbac
 }
 
 async function callGroqText(systemPrompt: string, userPrompt: string, fallback: string): Promise<string> {
-    if (!GROQ_API_KEY) return fallback;
+    if (!cerebrasClient) return fallback;
 
     try {
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${GROQ_API_KEY}`,
-            },
-            body: JSON.stringify({
-                model: GROQ_MODEL,
+        const completion = await withTimeout(
+            cerebrasClient.chat.completions.create({
+                model: CEREBRAS_MODEL,
                 temperature: 0.7,
                 max_tokens: 3000,
                 messages: [
@@ -591,17 +605,13 @@ async function callGroqText(systemPrompt: string, userPrompt: string, fallback: 
                     { role: "user", content: userPrompt },
                 ],
             }),
-        });
+            15000,
+            null
+        );
 
-        if (!response.ok) {
-            return fallback;
-        }
+        if (!completion) return fallback;
 
-        const data = (await response.json()) as {
-            choices?: Array<{ message?: { content?: string } }>;
-        };
-
-        return data.choices?.[0]?.message?.content ?? fallback;
+        return (completion as any).choices?.[0]?.message?.content ?? fallback;
     } catch {
         return fallback;
     }
@@ -758,7 +768,7 @@ function buildLlmHandoffMarkdown(
 }
 
 function shouldUseAI(): boolean {
-    return (REPORT_MODE === "hybrid" || REPORT_MODE === "ai") && Boolean(GROQ_API_KEY);
+    return (REPORT_MODE === "hybrid" || REPORT_MODE === "ai") && Boolean(CEREBRAS_API_KEY);
 }
 
 export async function buildReportPayload(
@@ -793,7 +803,7 @@ export async function buildReportPayload(
         `Branch: ${branch}`,
         `Generated At: ${new Date().toISOString()}`,
         `Engine Version: ${output.engine_version}`,
-        `Report Mode: ${shouldUseAI() ? "hybrid (deterministic + Groq)" : "deterministic"}`,
+        `Report Mode: ${shouldUseAI() ? "hybrid (deterministic + Cerebras)" : "deterministic"}`,
         "",
         "## 1) Executive Summary (Simple Language)",
         effectiveSummary,
@@ -864,70 +874,199 @@ export async function buildReportPayload(
     };
 }
 
+export interface ChatMessage {
+    role: "user" | "assistant";
+    content: string;
+}
+
 export async function answerQuestionFromReport(
     question: string,
-    report: ReportPayload
+    report: ReportPayload,
+    history: ChatMessage[] = [],
+    structuredContext?: {
+        metrics?: Record<string, unknown>;
+        detected_patterns?: unknown[];
+        insights?: unknown[];
+        overall_risk_level?: string;
+        architectural_theme?: string;
+        confidence_level?: string;
+        primary_risk_drivers?: string[];
+        refactor_strategy?: string;
+        scaling_outlook?: string;
+        long_term_recommendation?: string;
+    }
 ): Promise<string> {
-    const q = question.trim().toLowerCase();
+    const q = question.trim();
+    const isInitMode = q === "" || q === "__init__";
 
-    if (!q) {
-        return report.summary;
+    // ── LLM Path ─────────────────────────────────────────────────────────
+    if (CEREBRAS_API_KEY) {
+        // Build rich structured context block (much more informative than raw markdown)
+        const contextBlock = structuredContext
+            ? `\`\`\`json
+${JSON.stringify(
+    {
+        overall_risk_level: structuredContext.overall_risk_level,
+        architectural_theme: structuredContext.architectural_theme,
+        confidence_level: structuredContext.confidence_level,
+        primary_risk_drivers: structuredContext.primary_risk_drivers,
+        refactor_strategy: structuredContext.refactor_strategy,
+        scaling_outlook: structuredContext.scaling_outlook,
+        long_term_recommendation: structuredContext.long_term_recommendation,
+        metrics: structuredContext.metrics,
+        detected_patterns: structuredContext.detected_patterns,
+        insights: structuredContext.insights,
+        implementation_plan: report.implementation_plan,
+    },
+    null,
+    2
+)}
+\`\`\``
+            : `\`\`\`markdown\n${report.report_markdown}\n\`\`\``;
+
+        const systemPrompt = `You are ArchSight Copilot — an expert software architect and system design mentor embedded inside the ArchSight code intelligence platform.
+
+## Your Role
+You have been given a FULL structured architecture analysis report for a codebase. Your job is to answer any question the developer asks about their system — clearly, accurately, and helpfully.
+
+## Report Context You Have Access To
+The developer's codebase has been analyzed and you have:
+- **metrics**: Graph-level structural metrics (risk_score, cycles_detected, density, max_depth, coupling_score, avg_instability, etc.)
+- **detected_patterns**: Specific anti-patterns found (type, severity, affected_node_ids, description, evidence)
+- **insights**: Actionable engineering insights (category, severity, title, recommendation)
+- **implementation_plan**: Prioritized fix plan (P0/P1/P2 priority, steps, effort, expected_impact)
+- **overall_risk_level**: low | medium | high | critical
+- **architectural_theme**: Plain description of the system's architectural style
+
+## Metric Thresholds (use these to explain severity)
+| Metric | Healthy | Warning | Critical |
+|---|---|---|---|
+| risk_score | < 30 | 30–70 | > 70 |
+| cycles_detected | 0 | 1–2 | > 2 |
+| density | < 0.10 | 0.10–0.20 | > 0.20 |
+| max_depth | ≤ 4 | 5–6 | > 6 |
+| coupling_score | < 8 | 8–15 | > 15 |
+| avg_instability | < 0.45 | 0.45–0.65 | > 0.65 |
+| fan_in (per node) | < 5 | 5–8 | > 8 |
+
+## Pattern Glossary (explain these in plain language)
+- **circular_dependency**: Module A imports B which imports A — a dependency loop. Causes build fragility and makes safe refactoring nearly impossible.
+- **god_service**: One module that everything else depends on. High fan-in. Single point of failure that kills team velocity.
+- **deep_dependency_chain**: Many modules stacked on top of each other. A bug at the bottom cascades all the way up.
+- **tight_coupling**: Too many connections between modules. Changing one thing breaks many others.
+- **bottleneck_node**: A single node with extremely high centrality — every request flows through it. Kills horizontal scaling.
+- **async_bottleneck**: A queue worker that's backed up because only one dispatcher feeds it.
+- **risk_concentration**: Multiple severe problems concentrated in one area of the codebase.
+- **missing_service_boundary**: Database operations called directly from HTTP endpoints with no service layer in between.
+
+## Answer Rules
+1. **Be specific** — Reference actual numbers from the metrics (e.g., "Your risk score is 72/100, which is Critical territory"). Cite real pattern names and affected nodes.
+2. **Use plain language** — Explain like talking to a sharp second-year engineering student. Real-world analogies are great.
+3. **Be actionable** — Always end with something the developer can actually do.
+4. **Respond in Markdown** — Use headers (##), bullet points, bold, and code blocks where appropriate.
+5. **Be thorough but focused** — For complex questions (system design, architecture patterns), give complete explanations. For simple questions, be concise.
+6. **System design expertise** — You can explain any system design concept: microservices, event-driven architecture, CQRS, CAP theorem, distributed systems, load balancing, caching, database patterns, etc. Tie explanations back to the codebase context when relevant.
+7. **Use conversation history** — Remember what was discussed earlier in the chat. Build on previous answers.
+
+## For the Opening Briefing (__init__ mode)
+Give a friendly but informative intro summary covering: risk level, top 2-3 problems, and 2 quick wins. Format nicely. End by inviting the developer to ask anything.`;
+
+        // Build the message array: system + optional history + current question
+        const messages: Array<{ role: string; content: string }> = [
+            { role: "system", content: systemPrompt },
+        ];
+
+        // Include structured context as an initial assistant turn if there's no history yet
+        if (history.length === 0) {
+            messages.push({
+                role: "user",
+                content: `Here is the full architecture analysis for my codebase:\n\n${contextBlock}\n\nPlease keep this context in mind for all my questions.`,
+            });
+            messages.push({
+                role: "assistant",
+                content: "Got it — I've reviewed your full architecture analysis report and have all the context I need. Go ahead and ask me anything about your codebase!",
+            });
+        }
+
+        // Append conversation history
+        for (const msg of history) {
+            messages.push({ role: msg.role, content: msg.content });
+        }
+
+        // Append current question (or init prompt)
+        if (isInitMode) {
+            messages.push({
+                role: "user",
+                content: `Give me a friendly opening briefing about my codebase — what's the overall health, what are the top 2-3 issues I should know about, and 2 quick wins I can start with. Be encouraging but honest. Use Markdown formatting.`,
+            });
+        } else {
+            messages.push({ role: "user", content: q });
+        }
+
+        return callGroqChatMessages(systemPrompt, messages, report.summary);
     }
 
-    // Always use LLM for chat if key is available — independent of REPORT_MODE
-    if (GROQ_API_KEY) {
-        const systemPrompt = `You are a senior software architect explaining code analysis results to a developer in a friendly chat.
-
-Rules:
-- Use VERY SIMPLE language — imagine explaining to a 2nd year engineering student.
-- Translate technical terms into everyday language with real-world analogies.
-- Be conversational, friendly, and encouraging — like a helpful mentor.
-- Keep answers focused and concise (3-6 sentences) unless more detail is genuinely needed.
-- Do NOT dump raw metrics or long lists — pick the most important thing and explain it well.
-- If the question is about "problems" or "issues", explain WHY they are problems in practical terms.`;
-
-        const userPrompt = `Here is the architecture analysis report for this repository:
-
-${report.report_markdown}
-
-The developer is asking: "${question}"
-
-Answer their specific question simply and helpfully. Be like a mentor, not a report printer.`;
-
-        return callGroqText(systemPrompt, userPrompt, report.summary);
+    // ── Deterministic Fallback (no CEREBRAS key) ─────────────────────────────
+    if (isInitMode) {
+        return `## 📊 Architecture Briefing\n\n${report.summary}\n\n**Top Action:** ${report.implementation_plan[0]?.title ?? "No high-priority actions detected."}\n\nAsk me about specific risks, patterns, or what to fix first!`;
     }
 
-    // Deterministic fallback (no GROQ key)
-    if (
-        q.includes("runtime") ||
-        q.includes("bottleneck") ||
-        q.includes("break") ||
-        q.includes("fail") ||
-        q.includes("blast")
-    ) {
+    const ql = q.toLowerCase();
+
+    if (ql.includes("runtime") || ql.includes("bottleneck") || ql.includes("break") || ql.includes("fail") || ql.includes("blast")) {
         const top = report.implementation_plan[0];
         if (!top) return "No high-priority bottleneck was identified in the current report.";
-        return `Most likely first runtime break is around "${top.title}". ${top.reason} Mitigation: ${top.steps.slice(0, 2).join(". ")}`;
+        return `Most likely first runtime break is around **"${top.title}"**. ${top.reason} Mitigation: ${top.steps.slice(0, 2).join(". ")}`;
     }
 
-    if (q.includes("what do i do") || q.includes("next step") || q.includes("action") || q.includes("start")) {
+    if (ql.includes("what do i do") || ql.includes("next step") || ql.includes("action") || ql.includes("start")) {
         const top = report.implementation_plan[0];
         if (!top) return "Run weekly architecture scans and fail builds on new critical patterns.";
-        return `Start with: ${top.title}. ${top.expected_impact}. First steps: ${top.steps.slice(0, 2).join(". ")}`;
+        return `**Start with:** ${top.title}. ${top.expected_impact}.\n\nFirst steps:\n${top.steps.slice(0, 2).map(s => `- ${s}`).join("\n")}`;
     }
 
-    if (q.includes("risk") || q.includes("problem") || q.includes("issue")) {
-        return `Top risk summary: ${report.summary}`;
+    if (ql.includes("risk") || ql.includes("problem") || ql.includes("issue")) {
+        return `**Top risk summary:** ${report.summary}`;
     }
 
-    if (q.includes("plan") || q.includes("implement") || q.includes("fix")) {
+    if (ql.includes("plan") || ql.includes("implement") || ql.includes("fix")) {
         return report.implementation_plan
             .slice(0, 3)
-            .map((item, idx) => `${idx + 1}) ${item.priority} ${item.title} — ${item.reason}`)
-            .join(" | ");
+            .map((item, idx) => `${idx + 1}) **${item.priority}** ${item.title} — ${item.reason}`)
+            .join("\n");
     }
 
-    return `${report.summary} Ask about risks, priorities, or specific files for more detail.`;
+    return `${report.summary}\n\nAsk about risks, patterns, or specific files for more detail.`;
+}
+
+async function callGroqChatMessages(
+    _systemPrompt: string,
+    messages: Array<{ role: string; content: string }>,
+    fallback: string
+): Promise<string> {
+    if (!cerebrasClient) return fallback;
+
+    try {
+        const completion = await withTimeout(
+            cerebrasClient.chat.completions.create({
+                model: CEREBRAS_MODEL,
+                temperature: 0.5,
+                max_tokens: 4000,
+                messages: messages as any,
+            }),
+            25000,
+            null
+        );
+
+        if (!completion) {
+            return "The AI engine took too long to respond. The requested model (" + CEREBRAS_MODEL + ") might be unavailable or hanging on the Cerebras side.";
+        }
+
+        return (completion as any).choices?.[0]?.message?.content ?? fallback;
+    } catch (err) {
+        console.error("[ArchSight Copilot] Cerebras call failed:", err);
+        return fallback;
+    }
 }
 
 
@@ -948,7 +1087,7 @@ Do not be overly technical. Keep it engaging, educational, and easy to read. For
 Here is the report:
 ${report.report_markdown}`;
 
-    const simpleSection = GROQ_API_KEY
+    const simpleSection = CEREBRAS_API_KEY
         ? await callGroqText(systemPrompt, userPrompt, "")
         : "";
 

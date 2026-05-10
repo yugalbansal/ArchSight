@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -430,9 +430,12 @@ export default function ScanResultPage() {
     const [activeTab, setActiveTab] = useState<'codescan' | 'explorer' | 'archmap' | 'risksight' | 'copilot'>('codescan');
     const [chatInput, setChatInput] = useState("");
     const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([]);
+    const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
     const [chatReportMarkdown, setChatReportMarkdown] = useState<string>("");
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [chatError, setChatError] = useState<string | null>(null);
+    const [copilotInitialized, setCopilotInitialized] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!session?.user || !id) return;
@@ -524,10 +527,15 @@ export default function ScanResultPage() {
         }
     };
 
-    const requestIntelligenceChat = async (mode: "full_report" | "qa") => {
+    // Auto-scroll to bottom when new messages arrive
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages, isChatLoading]);
+
+    const requestIntelligenceChat = useCallback(async (mode: "full_report" | "qa" | "init", overrideQuestion?: string) => {
         if (!id || isChatLoading) return;
 
-        const question = chatInput.trim();
+        const question = overrideQuestion ?? chatInput.trim();
         if (mode === "qa" && !question) {
             setChatError("Enter a question first.");
             return;
@@ -536,7 +544,6 @@ export default function ScanResultPage() {
         setIsChatLoading(true);
         setChatError(null);
 
-        // Optimistically add user message
         if (mode === "qa") {
             setChatMessages(prev => [...prev, { role: 'user', text: question }]);
             setChatInput("");
@@ -548,6 +555,7 @@ export default function ScanResultPage() {
                 body: JSON.stringify({
                     mode,
                     message: mode === "qa" ? question : "",
+                    history: chatHistory,
                 }),
             });
 
@@ -557,29 +565,53 @@ export default function ScanResultPage() {
             }
 
             const data = payload as IntelligenceChatResponse;
-            if (mode === "qa") {
-                setChatMessages(prev => [...prev, { role: 'ai', text: data.reply || "I could not find a clear answer for that." }]);
-            } else {
-                // full_report: show in markdown area
+
+            if (mode === "full_report") {
                 setChatReportMarkdown(data.report_markdown || "");
                 setChatMessages(prev => [...prev, { role: 'ai', text: "✅ Full simplified report generated below! You can download it as a Markdown file." }]);
+            } else {
+                const aiText = data.reply || "I could not find a clear answer for that.";
+                setChatMessages(prev => [...prev, { role: 'ai', text: aiText }]);
+
+                // Update conversation history for multi-turn memory
+                setChatHistory(prev => {
+                    const next = [...prev];
+                    if (mode === "qa") next.push({ role: "user", content: question });
+                    next.push({ role: "assistant", content: aiText });
+                    return next;
+                });
+
+                if (mode === "init") setCopilotInitialized(true);
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Unknown chat/report error";
             setChatError(msg);
-            if (mode === "qa") {
+            if (mode !== "full_report") {
                 setChatMessages(prev => [...prev, { role: 'ai', text: `⚠️ ${msg}` }]);
             }
+            if (mode === "init") setCopilotInitialized(true); // Don't retry on error
         } finally {
             setIsChatLoading(false);
         }
-    };
+    }, [id, isChatLoading, chatInput, chatHistory]);
+
+    // Auto-initialize the Copilot when the tab opens for the first time.
+    // Use scan?.engine_result?.intelligence as fallback when no separate DB record exists.
+    useEffect(() => {
+        const hasIntel = !!(intelligence ?? scan?.engine_result?.intelligence);
+        if (activeTab === 'copilot' && !copilotInitialized && hasIntel && !isChatLoading) {
+            requestIntelligenceChat("init");
+        }
+    }, [activeTab, copilotInitialized, intelligence, scan, isChatLoading, requestIntelligenceChat]);
+
 
     useEffect(() => {
         if (scan?.status === "completed" || scan?.status === "failed") {
             // polling cleanup handled by return above
         }
     }, [scan?.status]);
+
+
 
     const toggleFile = (file: string) => {
         setExpandedFiles((prev) => {
@@ -668,6 +700,89 @@ export default function ScanResultPage() {
     const isProcessing = !["completed", "failed"].includes(scan.status);
     const groupedNodes = groupNodesByType(arch?.nodes);
     const nodeTypes = Object.keys(groupedNodes);
+
+    // ─── Dynamic Suggestion Chips based on detected analysis ─────────
+    const suggestionChips: string[] = (() => {
+        const chips: string[] = ["What should I fix first?", "Explain my overall risk score"];
+        if (!intel) return chips;
+        const patternTypes = new Set(intel.detected_patterns.map(p => p.type));
+        if (patternTypes.has("circular_dependency")) chips.push("Explain the circular dependencies");
+        if (patternTypes.has("god_service")) chips.push("What is the god service problem?");
+        if (patternTypes.has("bottleneck_node") || patternTypes.has("async_bottleneck")) chips.push("Which nodes are bottlenecks?");
+        if (patternTypes.has("missing_service_boundary")) chips.push("Why is a service layer important?");
+        if (patternTypes.has("deep_dependency_chain")) chips.push("What is a deep dependency chain?");
+        if (patternTypes.has("tight_coupling")) chips.push("How do I reduce tight coupling?");
+        chips.push("What does my scaling look like?");
+        chips.push("Give me a refactor plan");
+        return [...new Set(chips)].slice(0, 6);
+    })();
+
+    // ─── Lightweight Markdown Renderer ────────────────────────────────
+    function renderMarkdown(text: string) {
+        const lines = text.split("\n");
+        const elements: React.ReactNode[] = [];
+        let i = 0;
+        while (i < lines.length) {
+            const line = lines[i];
+            // H2
+            if (line.startsWith("## ")) {
+                elements.push(<h2 key={i} className="text-white font-bold text-sm mt-3 mb-1">{line.slice(3)}</h2>);
+            // H3
+            } else if (line.startsWith("### ")) {
+                elements.push(<h3 key={i} className="text-[#A0A0C0] font-semibold text-xs mt-2 mb-0.5 uppercase tracking-wide">{line.slice(4)}</h3>);
+            // Bullet
+            } else if (line.startsWith("- ") || line.startsWith("* ")) {
+                elements.push(
+                    <div key={i} className="flex gap-2 text-sm text-[#C8C8E0] leading-relaxed">
+                        <span className="text-[#A855F7] mt-[3px] shrink-0">•</span>
+                        <span dangerouslySetInnerHTML={{ __html: inlineFormat(line.slice(2)) }} />
+                    </div>
+                );
+            // Numbered list
+            } else if (/^\d+\.\s/.test(line)) {
+                const num = line.match(/^(\d+)\.\s/)?.[1] ?? "";
+                elements.push(
+                    <div key={i} className="flex gap-2 text-sm text-[#C8C8E0] leading-relaxed">
+                        <span className="text-[#A855F7] font-mono shrink-0 w-4">{num}.</span>
+                        <span dangerouslySetInnerHTML={{ __html: inlineFormat(line.replace(/^\d+\.\s/, "")) }} />
+                    </div>
+                );
+            // Code block (inline — just style it)
+            } else if (line.startsWith("```")) {
+                const codeLines: string[] = [];
+                i++;
+                while (i < lines.length && !lines[i].startsWith("```")) {
+                    codeLines.push(lines[i]);
+                    i++;
+                }
+                elements.push(
+                    <pre key={i} className="bg-[#0A0A0F] border border-[#2A2A3A] rounded-lg p-3 text-xs font-mono text-[#A0E0C0] overflow-x-auto my-1">
+                        {codeLines.join("\n")}
+                    </pre>
+                );
+            // Horizontal rule
+            } else if (line === "---" || line === "***") {
+                elements.push(<hr key={i} className="border-[#1E1E2E] my-2" />);
+            // Empty line
+            } else if (line.trim() === "") {
+                elements.push(<div key={i} className="h-1" />);
+            // Regular paragraph
+            } else {
+                elements.push(
+                    <p key={i} className="text-sm text-[#C8C8E0] leading-relaxed" dangerouslySetInnerHTML={{ __html: inlineFormat(line) }} />
+                );
+            }
+            i++;
+        }
+        return <div className="space-y-1">{elements}</div>;
+    }
+
+    function inlineFormat(text: string): string {
+        return text
+            .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em class="text-[#C8C8E0]">$1</em>')
+            .replace(/`(.+?)`/g, '<code class="bg-[#1E1E2E] text-[#A0E0C0] px-1 rounded font-mono text-xs">$1</code>');
+    }
 
     return (
         <div className="min-h-screen bg-[#0A0A0F] text-[#A0A0C0] font-sans selection:bg-[#6C63FF]/30 p-6 lg:p-12 relative overflow-hidden">
@@ -946,11 +1061,20 @@ export default function ScanResultPage() {
                         {/* Header */}
                         <div className="flex items-center justify-between">
                             <div>
-                                <h3 className="text-white font-semibold text-lg flex items-center gap-2">
-                                    <Lightbulb className="h-5 w-5 text-[#A855F7]" />
-                                    Intelligence Copilot
+                                <h3 className="text-white font-semibold text-lg flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-xl bg-[#A855F7]/15 border border-[#A855F7]/30 flex items-center justify-center">
+                                        <Lightbulb className="h-4 w-4 text-[#A855F7]" />
+                                    </div>
+                                    ArchSight Copilot
+                                    {/* Context badge */}
+                                    <span className="flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full bg-[#22C55E]/10 border border-[#22C55E]/25 text-[#22C55E]">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+                                        Report Loaded
+                                    </span>
                                 </h3>
-                                <p className="text-[#5A5A7A] text-xs mt-0.5">Ask anything about your codebase in plain English</p>
+                                <p className="text-[#5A5A7A] text-xs mt-1 ml-11">
+                                    Fully aware of your scan — ask anything about architecture, risks, or system design
+                                </p>
                             </div>
                             <button
                                 onClick={() => requestIntelligenceChat("full_report")}
@@ -962,18 +1086,35 @@ export default function ScanResultPage() {
                             </button>
                         </div>
 
+                        {/* Suggestion Chips */}
+                        {chatMessages.length <= 1 && !isChatLoading && (
+                            <div className="flex flex-wrap gap-2">
+                                {suggestionChips.map((chip) => (
+                                    <button
+                                        key={chip}
+                                        onClick={() => requestIntelligenceChat("qa", chip)}
+                                        disabled={isChatLoading}
+                                        className="text-xs px-3 py-1.5 rounded-full bg-[#1E1E2E] hover:bg-[#A855F7]/15 border border-[#2A2A3A] hover:border-[#A855F7]/40 text-[#A0A0C0] hover:text-[#E2E8F0] transition-all disabled:opacity-40 flex items-center gap-1.5"
+                                    >
+                                        <Lightbulb className="h-3 w-3 text-[#A855F7]" />
+                                        {chip}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
                         {/* Chat Bubble Window */}
-                        <div className="rounded-2xl bg-[#0D0D15] border border-[#1E1E2E] overflow-hidden flex flex-col" style={{ minHeight: '360px' }}>
+                        <div className="rounded-2xl bg-[#0D0D15] border border-[#1E1E2E] overflow-hidden flex flex-col" style={{ minHeight: '420px' }}>
                             {/* Messages Area */}
-                            <div className="flex-1 p-5 space-y-4 overflow-y-auto" style={{ maxHeight: '400px' }}>
+                            <div className="flex-1 p-5 space-y-5 overflow-y-auto" style={{ maxHeight: '480px' }}>
                                 {chatMessages.length === 0 && !isChatLoading && (
                                     <div className="flex flex-col items-center justify-center h-40 text-center gap-3">
                                         <div className="w-12 h-12 rounded-full bg-[#A855F7]/10 border border-[#A855F7]/20 flex items-center justify-center">
                                             <Lightbulb className="h-5 w-5 text-[#A855F7]" />
                                         </div>
                                         <div>
-                                            <p className="text-[#E2E8F0] font-medium text-sm">Ask me anything about your repo</p>
-                                            <p className="text-[#5A5A7A] text-xs mt-1">e.g. "What are the biggest problems?" or "Where should I start?"</p>
+                                            <p className="text-[#E2E8F0] font-medium text-sm">Loading your briefing...</p>
+                                            <p className="text-[#5A5A7A] text-xs mt-1">ArchSight Copilot is reading your report</p>
                                         </div>
                                     </div>
                                 )}
@@ -984,16 +1125,19 @@ export default function ScanResultPage() {
                                                 <Lightbulb className="h-4 w-4 text-[#A855F7]" />
                                             </div>
                                         )}
-                                        <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                        <div className={`max-w-[82%] rounded-2xl px-4 py-3 ${
                                             msg.role === 'user'
-                                                ? 'bg-[#6C63FF]/15 text-[#E2E8F0] border border-[#6C63FF]/20 rounded-br-sm'
-                                                : 'bg-[#1E1E2E] text-[#E2E8F0] border border-[#2A2A3A] rounded-bl-sm'
+                                                ? 'bg-[#6C63FF]/15 border border-[#6C63FF]/20 rounded-br-sm'
+                                                : 'bg-[#13131E] border border-[#2A2A3A] rounded-bl-sm'
                                         }`}>
-                                            <p className="whitespace-pre-wrap">{msg.text}</p>
+                                            {msg.role === 'ai'
+                                                ? renderMarkdown(msg.text)
+                                                : <p className="text-sm text-[#E2E8F0] leading-relaxed">{msg.text}</p>
+                                            }
                                         </div>
                                         {msg.role === 'user' && (
                                             <div className="w-8 h-8 rounded-full bg-[#6C63FF]/15 border border-[#6C63FF]/30 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold text-[#6C63FF]">
-                                                Y
+                                                {(session?.user?.name?.[0] ?? "Y").toUpperCase()}
                                             </div>
                                         )}
                                     </div>
@@ -1003,14 +1147,32 @@ export default function ScanResultPage() {
                                         <div className="w-8 h-8 rounded-full bg-[#A855F7]/15 border border-[#A855F7]/30 flex items-center justify-center shrink-0">
                                             <Lightbulb className="h-4 w-4 text-[#A855F7]" />
                                         </div>
-                                        <div className="bg-[#1E1E2E] border border-[#2A2A3A] rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+                                        <div className="bg-[#13131E] border border-[#2A2A3A] rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
                                             <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: '0ms' }} />
                                             <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: '150ms' }} />
                                             <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-bounce" style={{ animationDelay: '300ms' }} />
                                         </div>
                                     </div>
                                 )}
+                                {/* Auto-scroll sentinel */}
+                                <div ref={chatEndRef} />
                             </div>
+
+                            {/* Suggestion chips inside chat (shown after first message) */}
+                            {chatMessages.length > 1 && !isChatLoading && (
+                                <div className="px-5 pb-3 flex flex-wrap gap-2 border-t border-[#1E1E2E] pt-3">
+                                    {suggestionChips.slice(0, 4).map((chip) => (
+                                        <button
+                                            key={chip}
+                                            onClick={() => requestIntelligenceChat("qa", chip)}
+                                            disabled={isChatLoading}
+                                            className="text-[11px] px-2.5 py-1 rounded-full bg-[#1A1A2E] hover:bg-[#A855F7]/10 border border-[#2A2A3A] hover:border-[#A855F7]/30 text-[#5A5A7A] hover:text-[#A0A0C0] transition-all disabled:opacity-40"
+                                        >
+                                            {chip}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
                             {/* Input Area */}
                             <div className="border-t border-[#1E1E2E] p-3 flex gap-2 bg-[#0A0A0F]">
@@ -1018,7 +1180,7 @@ export default function ScanResultPage() {
                                     value={chatInput}
                                     onChange={(e) => setChatInput(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); requestIntelligenceChat('qa'); } }}
-                                    placeholder="Ask a question about your codebase..."
+                                    placeholder="Ask anything — architecture, risks, system design, patterns..."
                                     className="flex-1 bg-[#13131E] border border-[#1E1E2E] focus:border-[#A855F7]/50 text-[#E2E8F0] rounded-xl px-4 py-2.5 text-sm outline-none placeholder:text-[#3E3E5E] transition-colors"
                                     disabled={isChatLoading}
                                 />
@@ -1032,7 +1194,7 @@ export default function ScanResultPage() {
                             </div>
                         </div>
 
-                        {/* Full Report Markdown (only shown after Generate Full Report) */}
+                        {/* Full Report Markdown */}
                         {chatReportMarkdown && (
                             <div className="rounded-2xl bg-[#0D0D15] border border-[#A855F7]/20 overflow-hidden">
                                 <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E1E2E] bg-[#13131E]">
@@ -1065,11 +1227,14 @@ export default function ScanResultPage() {
                                         </button>
                                     </div>
                                 </div>
-                                <pre className="p-5 max-h-80 overflow-auto whitespace-pre-wrap text-sm text-[#E2E8F0] font-mono leading-relaxed">{chatReportMarkdown}</pre>
+                                <div className="p-5 max-h-80 overflow-auto">
+                                    {renderMarkdown(chatReportMarkdown)}
+                                </div>
                             </div>
                         )}
                     </div>
                 )}
+
 
                 {/* ─── Tab Content: RiskSight — Intelligence Engine ─────── */}
                 {result && activeTab === 'risksight' && intel && (

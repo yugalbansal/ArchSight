@@ -8,6 +8,7 @@ import {
     answerQuestionFromReport,
     generateSimpleReport,
 } from "../engines/intelligence_engine/index.js";
+import type { ChatMessage } from "../engines/intelligence_engine/reporting.js";
 import type { ArchitectureGraph } from "../schemas/architecture-graph.schema.js";
 import type {
     IntelligenceOutput,
@@ -22,7 +23,8 @@ const router = Router();
 
 interface ChatRequestBody {
     message?: string;
-    mode?: "full_report" | "qa";
+    mode?: "full_report" | "qa" | "init";
+    history?: ChatMessage[];
 }
 
 function mapRecordToIntelligenceOutput(record: {
@@ -126,36 +128,71 @@ router.post("/:scanId/chat", async (req, res) => {
         }
 
         const body = (req.body || {}) as ChatRequestBody;
-        const mode = body.mode === "qa" ? "qa" : "full_report";
+        const rawMode = body.mode;
+        const mode = rawMode === "qa" ? "qa" : rawMode === "init" ? "init" : "full_report";
         const message = typeof body.message === "string" ? body.message.trim() : "";
+        const history: ChatMessage[] = Array.isArray(body.history) ? body.history : [];
 
         const analysisRecord = await IntelligenceModel.getByScanId(scanId);
-        if (!analysisRecord) {
-            return res.status(404).json({
-                error: "Intelligence analysis not found for this scan. Run reanalysis first.",
+
+        let output: IntelligenceOutput;
+
+        if (analysisRecord) {
+            output = mapRecordToIntelligenceOutput({
+                scanId: analysisRecord.scanId,
+                riskLevel: analysisRecord.riskLevel,
+                confidence: analysisRecord.confidence,
+                theme: analysisRecord.theme,
+                metrics: analysisRecord.metrics,
+                patterns: analysisRecord.patterns,
+                insights: analysisRecord.insights,
+                strategy: analysisRecord.strategy,
+                updatedAt: analysisRecord.updatedAt,
             });
+        } else {
+            // Fallback: read intelligence embedded directly in the scan's rawAst
+            const raw = ownedScan.rawAst as Record<string, unknown> | null;
+            const embedded = raw?.intelligence as IntelligenceOutput | undefined;
+            if (!embedded || !embedded.metrics || !Array.isArray(embedded.detected_patterns)) {
+                return res.status(404).json({
+                    error: "Intelligence analysis not found for this scan. Run reanalysis first.",
+                });
+            }
+            output = {
+                ...embedded,
+                scan_id: ownedScan.id,
+                engine_version: (embedded.engine_version as string | undefined) ?? "3.0.0",
+            };
         }
 
-        const output = mapRecordToIntelligenceOutput({
-            scanId: analysisRecord.scanId,
-            riskLevel: analysisRecord.riskLevel,
-            confidence: analysisRecord.confidence,
-            theme: analysisRecord.theme,
-            metrics: analysisRecord.metrics,
-            patterns: analysisRecord.patterns,
-            insights: analysisRecord.insights,
-            strategy: analysisRecord.strategy,
-            updatedAt: analysisRecord.updatedAt,
-        });
+        // Build the full structured context to pass to the LLM
+        const structuredContext = {
+            overall_risk_level: output.overall_risk_level,
+            architectural_theme: output.architectural_theme,
+            confidence_level: output.confidence_level,
+            primary_risk_drivers: output.primary_risk_drivers,
+            refactor_strategy: output.refactor_strategy,
+            scaling_outlook: output.scaling_outlook,
+            long_term_recommendation: output.long_term_recommendation,
+            metrics: output.metrics as unknown as Record<string, unknown>,
+            detected_patterns: output.detected_patterns as unknown[],
+            insights: output.insights as unknown[],
+        };
 
         const repoFullName = `${ownedScan.repository.owner}/${ownedScan.repository.name}`;
         const branch = ownedScan.branch;
         const report = await buildReportPayload(output, repoFullName, branch);
-        const reply = mode === "qa" ? await answerQuestionFromReport(message, report) : report.summary;
 
+        let reply: string;
         let finalMarkdown = report.report_markdown;
+
         if (mode === "full_report") {
             finalMarkdown = await generateSimpleReport(report);
+            reply = report.summary;
+        } else {
+            // Both "qa" and "init" use the context-aware LLM path
+            const questionForLLM = mode === "init" ? "__init__" : message;
+            reply = await answerQuestionFromReport(questionForLLM, report, history, structuredContext);
         }
 
         return res.status(200).json({
@@ -196,7 +233,35 @@ router.get("/:scanId", async (req, res) => {
             return res.status(404).json({ error: "Scan not found." });
         }
 
-        const analysis = await IntelligenceModel.getByScanId(scanId);
+        let analysis = await IntelligenceModel.getByScanId(scanId);
+        
+        if (!analysis) {
+            // Fallback: read intelligence embedded directly in the scan's rawAst
+            const raw = ownedScan.rawAst as Record<string, unknown> | null;
+            const embedded = raw?.intelligence as any;
+            if (embedded && embedded.metrics && Array.isArray(embedded.detected_patterns)) {
+                analysis = {
+                    id: `embedded-${scanId}`,
+                    scanId: scanId,
+                    riskLevel: embedded.overall_risk_level || "unknown",
+                    confidence: embedded.confidence_level || "unknown",
+                    theme: embedded.architectural_theme || "unknown",
+                    metrics: embedded.metrics,
+                    patterns: embedded.detected_patterns,
+                    insights: embedded.insights || [],
+                    strategy: {
+                        refactor_strategy: embedded.refactor_strategy,
+                        scaling_outlook: embedded.scaling_outlook,
+                        long_term_recommendation: embedded.long_term_recommendation,
+                        primary_risk_drivers: embedded.primary_risk_drivers,
+                        priority_order: embedded.priority_order
+                    },
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                };
+            }
+        }
+
         if (!analysis) {
             return res.status(404).json({ error: "Intelligence analysis not found for this scan." });
         }
