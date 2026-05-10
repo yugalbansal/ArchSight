@@ -158,7 +158,7 @@ export class ArchitectureEngine {
 
         return {
             insights,
-            visualization: this.generateVisualizationFromNodes(scanData?.nodes || [], scanData?.edges || []),
+            visualization: this.generateVisualizationFromNodes(scanData?.nodes || [], scanData?.edges || [], insights),
             summary: this.insightBuilder.buildSummary(insights)
         };
     }
@@ -268,7 +268,7 @@ export class ArchitectureEngine {
     /**
      * Generate visualization directly from database nodes (more reliable)
      */
-    generateVisualizationFromNodes(dbNodes: any[], dbEdges: any[]): VisualizationData {
+    generateVisualizationFromNodes(dbNodes: any[], dbEdges: any[], insights: ArchitectureInsights): VisualizationData {
         const nodes = dbNodes.map((node, index) => {
             // Extract meaningful name from metadata with better logic
             let displayName = this.extractNodeName(node);
@@ -313,7 +313,7 @@ export class ArchitectureEngine {
             }
         }));
 
-        // Apply intelligent layout using dagre
+        // Layout (kept internal for existing ReactFlow view)
         const layoutedElements = this.getLayoutedElements(nodes, edges);
 
         return {
@@ -328,41 +328,14 @@ export class ArchitectureEngine {
     }
 
     private getLayoutedElements(nodes: any[], edges: any[]) {
-        const dagreGraph = new dagre.graphlib.Graph();
-        dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-        // Configure layout direction and spacing
-        dagreGraph.setGraph({
-            rankdir: 'TB',  // Top to bottom flow
-            ranksep: 150,   // Vertical spacing between ranks
-            nodesep: 120,   // Horizontal spacing between nodes
-            edgesep: 50     // Spacing between edges
+        // Force-directed layout logic
+        nodes.forEach((node, index) => {
+            const angle = (index / nodes.length) * 2 * Math.PI;
+            node.position = {
+                x: 400 * Math.cos(angle) + 500,
+                y: 400 * Math.sin(angle) + 300,
+            };
         });
-
-        // Add nodes to dagre graph
-        nodes.forEach((node) => {
-            dagreGraph.setNode(node.id, { width: 200, height: 80 });
-        });
-
-        // Add edges to dagre graph
-        edges.forEach((edge) => {
-            dagreGraph.setEdge(edge.source, edge.target);
-        });
-
-        // Calculate layout
-        dagre.layout(dagreGraph);
-
-        // Apply calculated positions to nodes
-        nodes.forEach((node) => {
-            const nodeWithPosition = dagreGraph.node(node.id);
-            if (nodeWithPosition) {
-                node.position = {
-                    x: nodeWithPosition.x - 100, // Center the node
-                    y: nodeWithPosition.y - 40
-                };
-            }
-        });
-
         return { nodes, edges };
     }
 

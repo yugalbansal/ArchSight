@@ -38,6 +38,7 @@ export class InsightBuilder {
 
         return {
             architecture_type: results.topology.architectureType,
+            graph_layout: 'force-directed',
             services: results.topology.services,
             external_dependencies: results.topology.externalDependencies,
             risk_score: results.risks.overallScore,

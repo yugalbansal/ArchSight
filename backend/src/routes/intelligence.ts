@@ -78,17 +78,15 @@ function mapRecordToIntelligenceOutput(record: {
 }
 
 async function getOwnedScan(userId: string, scanId: string) {
-    return prisma.scan.findUnique({
+    const scan = await prisma.scan.findUnique({
         where: { id: scanId },
         include: {
             repository: true,
-            intelligenceAnalysis: true,
         },
-    }).then(scan => {
-        if (!scan) return null;
-        if (scan.repository.userId !== userId) return null;
-        return scan;
     });
+    if (!scan) return null;
+    if (!scan.repository || scan.repository.userId !== userId) return null;
+    return scan;
 }
 
 /**

@@ -1,5 +1,6 @@
 export interface ArchitectureInsights {
   architecture_type: string;
+  graph_layout: 'dagre' | 'force-directed';
   services: number;
   external_dependencies: number;
   risk_score: number;

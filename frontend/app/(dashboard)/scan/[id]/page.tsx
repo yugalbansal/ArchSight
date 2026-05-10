@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
+import { LivingArchMapCanvas } from "@/components/LivingArchMapCanvas";
 import { fetchWithAuth, API_URL } from "@/lib/api";
 import { FileTree } from "@/components/ui/file-tree";
 import { FileExplorerPanel } from "@/components/ui/file-explorer-panel";
@@ -912,7 +912,7 @@ export default function ScanResultPage() {
                 {/* ─── Tab Content: ArchMap — Dependency Graph ──────────── */}
                 {result && activeTab === 'archmap' && (
                     <div className="reveal opacity-0 translate-y-4 animate-[fadeInUp_0.5s_ease-out_forwards]">
-                        <ArchitectureDiagram scanId={id} />
+                        <LivingArchMapCanvas scanId={id} />
                     </div>
                 )}
 

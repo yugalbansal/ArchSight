@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ArchitectureEngine } from "../engines/architecture_engine/index.js";
+import { buildLivingArchMapData } from "../engines/architecture_engine/living_map.mapper.js";
 
 const router = Router();
 const architectureEngine = new ArchitectureEngine();
@@ -69,7 +70,8 @@ router.get("/:scanId", async (req, res) => {
         // Generate visualization directly from DB node/edge rows
         const visualization = architectureEngine.generateVisualizationFromNodes(
             scanData.nodes,
-            scanData.edges || []
+            scanData.edges || [],
+            scanData.architectureAnalysis?.insights as any
         );
 
         // Include Engine 2 insights if available (richer metadata)
@@ -87,6 +89,50 @@ router.get("/:scanId", async (req, res) => {
         console.error("Get architecture error:", error);
         res.status(500).json({
             error: error instanceof Error ? error.message : "Failed to retrieve analysis"
+        });
+    }
+});
+
+/**
+ * Living Arch Map data (for HTML/Canvas widget)
+ * GET /api/architecture/:scanId/living
+ */
+router.get("/:scanId/living", async (req, res) => {
+    try {
+        const { scanId } = req.params;
+        const { prisma } = await import("../lib/db.js");
+
+        const scanData = await prisma.scan.findUnique({
+            where: { id: scanId },
+            include: {
+                nodes: true,
+                edges: true,
+                architectureAnalysis: true
+            }
+        });
+
+        if (!scanData) {
+            return res.status(404).json({ error: "Scan not found" });
+        }
+
+        if (!scanData.nodes || scanData.nodes.length === 0) {
+            return res.status(404).json({ error: "No architecture nodes for this scan" });
+        }
+
+        const living = buildLivingArchMapData(
+            scanData.nodes as any,
+            (scanData.edges || []) as any,
+            scanData.architectureAnalysis?.insights as any
+        );
+
+        return res.json({
+            success: true,
+            ...living,
+        });
+    } catch (error) {
+        console.error("Get living arch map error:", error);
+        res.status(500).json({
+            error: error instanceof Error ? error.message : "Failed to build living arch map"
         });
     }
 });
