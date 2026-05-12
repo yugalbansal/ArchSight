@@ -76,15 +76,36 @@ interface PriorityStrategy {
     refined_scaling_outlook: string;
 }
 
-import Cerebras from '@cerebras/cerebras_cloud_sdk';
+import Groq from 'groq-sdk';
 
 const REPORT_MODE = process.env.INTELLIGENCE_REPORT_MODE ?? "deterministic";
-const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
-const CEREBRAS_MODEL = process.env.CEREBRAS_MODEL ?? "qwen-3-235b-a22b-instruct-2507";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
-const cerebrasClient = CEREBRAS_API_KEY ? new Cerebras({
-    apiKey: CEREBRAS_API_KEY,
-}) : null;
+const groqClient = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
+
+// ── Jargon / gibberish detection ──────────────────────────────────────
+const JARGON_PATTERNS = [
+    /^[^a-zA-Z]*$/, // no letters at all
+    /\b(asdf|qwerty|zxcvbn|aaaaaa|blah|bleh|lorem|foo bar baz|test test test)\b/i,
+];
+const MIN_WORD_LENGTH = 2;
+const MIN_MEANINGFUL_WORDS = 2;
+
+function detectJargon(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < 2) return true;
+    for (const p of JARGON_PATTERNS) {
+        if (p.test(trimmed)) return true;
+    }
+    // Must have at least MIN_MEANINGFUL_WORDS real words
+    const words = trimmed.split(/\s+/).filter(w => w.length >= MIN_WORD_LENGTH && /[a-zA-Z]/.test(w));
+    if (words.length < MIN_MEANINGFUL_WORDS && trimmed.split(/\s+/).length > 1) return true;
+    // High ratio of non-alphabetic chars (random key smashing)
+    const alphaRatio = (trimmed.match(/[a-zA-Z ]/g) ?? []).length / trimmed.length;
+    if (alphaRatio < 0.4 && trimmed.length > 6) return true;
+    return false;
+}
 
 
 function formatPatternName(type: string): string {
@@ -547,7 +568,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<T>((resolve) => {
         timer = setTimeout(() => {
-            console.error(`[ArchSight Copilot] Cerebras API timed out after ${ms}ms`);
+            console.warn(`[ArchSight Copilot] Groq API timed out after ${ms}ms`);
             resolve(fallback);
         }, ms);
     });
@@ -565,54 +586,56 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Pro
 }
 
 async function callGroqJSON<T>(systemPrompt: string, userPrompt: string, fallback: T): Promise<T> {
-    if (!cerebrasClient) return fallback;
+    if (!groqClient) return fallback;
 
     try {
         const completion = await withTimeout(
-            cerebrasClient.chat.completions.create({
-                model: CEREBRAS_MODEL,
+            groqClient.chat.completions.create({
+                model: GROQ_MODEL,
                 temperature: 0.2,
-                max_tokens: 1800,
+                max_tokens: 1024,
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userPrompt },
                 ],
             }),
-            15000,
+            20000,
             null
         );
 
         if (!completion) return fallback;
 
-        const content = (completion as any).choices?.[0]?.message?.content ?? "";
+        const content = completion.choices?.[0]?.message?.content ?? "";
         return safeParseJSON(content, fallback);
-    } catch {
+    } catch (err) {
+        console.error("[ArchSight Copilot] Groq JSON call failed:", err);
         return fallback;
     }
 }
 
 async function callGroqText(systemPrompt: string, userPrompt: string, fallback: string): Promise<string> {
-    if (!cerebrasClient) return fallback;
+    if (!groqClient) return fallback;
 
     try {
         const completion = await withTimeout(
-            cerebrasClient.chat.completions.create({
-                model: CEREBRAS_MODEL,
-                temperature: 0.7,
-                max_tokens: 3000,
+            groqClient.chat.completions.create({
+                model: GROQ_MODEL,
+                temperature: 0.6,
+                max_tokens: 2048,
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userPrompt },
                 ],
             }),
-            15000,
+            25000,
             null
         );
 
         if (!completion) return fallback;
 
-        return (completion as any).choices?.[0]?.message?.content ?? fallback;
-    } catch {
+        return completion.choices?.[0]?.message?.content ?? fallback;
+    } catch (err) {
+        console.error("[ArchSight Copilot] Groq text call failed:", err);
         return fallback;
     }
 }
@@ -768,7 +791,7 @@ function buildLlmHandoffMarkdown(
 }
 
 function shouldUseAI(): boolean {
-    return (REPORT_MODE === "hybrid" || REPORT_MODE === "ai") && Boolean(CEREBRAS_API_KEY);
+    return (REPORT_MODE === "hybrid" || REPORT_MODE === "ai") && Boolean(GROQ_API_KEY);
 }
 
 export async function buildReportPayload(
@@ -803,7 +826,7 @@ export async function buildReportPayload(
         `Branch: ${branch}`,
         `Generated At: ${new Date().toISOString()}`,
         `Engine Version: ${output.engine_version}`,
-        `Report Mode: ${shouldUseAI() ? "hybrid (deterministic + Cerebras)" : "deterministic"}`,
+        `Report Mode: ${shouldUseAI() ? `hybrid (deterministic + Groq ${GROQ_MODEL})` : "deterministic"}`,
         "",
         "## 1) Executive Summary (Simple Language)",
         effectiveSummary,
@@ -879,6 +902,37 @@ export interface ChatMessage {
     content: string;
 }
 
+// ── Project-aware context builder (slim, token-safe) ──────────────────
+function buildSlimContext(structuredContext: NonNullable<Parameters<typeof answerQuestionFromReport>[3]>): string {
+    // Trim patterns to top-5 most severe, insights to top-5
+    const patterns = (structuredContext.detected_patterns ?? []).slice(0, 5);
+    const insights = (structuredContext.insights ?? []).slice(0, 5);
+    const metrics = structuredContext.metrics ?? {};
+
+    return JSON.stringify({
+        overall_risk_level: structuredContext.overall_risk_level,
+        architectural_theme: structuredContext.architectural_theme,
+        confidence_level: structuredContext.confidence_level,
+        primary_risk_drivers: (structuredContext.primary_risk_drivers ?? []).slice(0, 5),
+        refactor_strategy: structuredContext.refactor_strategy,
+        scaling_outlook: structuredContext.scaling_outlook,
+        long_term_recommendation: structuredContext.long_term_recommendation,
+        metrics: {
+            risk_score: metrics["risk_score"],
+            cycles_detected: metrics["cycles_detected"],
+            density: metrics["density"],
+            max_depth: metrics["max_depth"],
+            coupling_score: metrics["coupling_score"],
+            avg_instability: metrics["avg_instability"],
+            total_nodes: metrics["total_nodes"],
+            total_edges: metrics["total_edges"],
+            strongly_connected_components: metrics["strongly_connected_components"],
+        },
+        top_patterns: patterns,
+        top_insights: insights,
+    }, null, 2);
+}
+
 export async function answerQuestionFromReport(
     question: string,
     report: ReportPayload,
@@ -894,119 +948,137 @@ export async function answerQuestionFromReport(
         refactor_strategy?: string;
         scaling_outlook?: string;
         long_term_recommendation?: string;
+        // Project-aware fields injected from the scan graph
+        project_files?: string[];
+        project_services?: string[];
+        project_endpoints?: string[];
+        repo_name?: string;
+        framework?: string;
     }
 ): Promise<string> {
     const q = question.trim();
     const isInitMode = q === "" || q === "__init__";
 
-    // ── LLM Path ─────────────────────────────────────────────────────────
-    if (CEREBRAS_API_KEY) {
-        // Build rich structured context block (much more informative than raw markdown)
-        const contextBlock = structuredContext
-            ? `\`\`\`json
-${JSON.stringify(
-    {
-        overall_risk_level: structuredContext.overall_risk_level,
-        architectural_theme: structuredContext.architectural_theme,
-        confidence_level: structuredContext.confidence_level,
-        primary_risk_drivers: structuredContext.primary_risk_drivers,
-        refactor_strategy: structuredContext.refactor_strategy,
-        scaling_outlook: structuredContext.scaling_outlook,
-        long_term_recommendation: structuredContext.long_term_recommendation,
-        metrics: structuredContext.metrics,
-        detected_patterns: structuredContext.detected_patterns,
-        insights: structuredContext.insights,
-        implementation_plan: report.implementation_plan,
-    },
-    null,
-    2
-)}
-\`\`\``
-            : `\`\`\`markdown\n${report.report_markdown}\n\`\`\``;
+    // ── Jargon check (skip for init mode) ────────────────────────────────
+    if (!isInitMode && detectJargon(q)) {
+        return [
+            "## ⚠️ I didn't quite catch that",
+            "",
+            "That input looks like random characters or gibberish. Could you rephrase your question?",
+            "",
+            "**Here are some things I can help with:**",
+            "- `What should I fix first?`",
+            "- `Explain my risk score`",
+            "- `What are the circular dependencies?`",
+            "- `Give me a refactor plan`",
+            "- `Why is my coupling score high?`",
+            "",
+            "Ask me anything about your codebase's architecture, risks, or design! 🚀",
+        ].join("\n");
+    }
 
-        const systemPrompt = `You are ArchSight Copilot — an expert software architect and system design mentor embedded inside the ArchSight code intelligence platform.
+    // ── Groq LLM Path ─────────────────────────────────────────────────────
+    if (groqClient) {
+        // Build a compact context block to avoid token overflow
+        const slimCtx = structuredContext ? buildSlimContext(structuredContext) : null;
+        const contextBlock = slimCtx
+            ? `\`\`\`json\n${slimCtx}\n\`\`\``
+            : `\`\`\`markdown\n${report.report_markdown.slice(0, 3000)}\n\`\`\``;
 
-## Your Role
-You have been given a FULL structured architecture analysis report for a codebase. Your job is to answer any question the developer asks about their system — clearly, accurately, and helpfully.
+        // Build project-awareness section
+        const repoName = structuredContext?.repo_name ?? "this repository";
+        const framework = structuredContext?.framework ?? "unknown framework";
+        const topFiles = (structuredContext?.project_files ?? []).slice(0, 12);
+        const topServices = (structuredContext?.project_services ?? []).slice(0, 10);
+        const topEndpoints = (structuredContext?.project_endpoints ?? []).slice(0, 8);
 
-## Report Context You Have Access To
-The developer's codebase has been analyzed and you have:
-- **metrics**: Graph-level structural metrics (risk_score, cycles_detected, density, max_depth, coupling_score, avg_instability, etc.)
-- **detected_patterns**: Specific anti-patterns found (type, severity, affected_node_ids, description, evidence)
-- **insights**: Actionable engineering insights (category, severity, title, recommendation)
-- **implementation_plan**: Prioritized fix plan (P0/P1/P2 priority, steps, effort, expected_impact)
-- **overall_risk_level**: low | medium | high | critical
-- **architectural_theme**: Plain description of the system's architectural style
+        const projectSection = [
+            `## Project Being Analyzed`,
+            `- **Repository**: ${repoName}`,
+            `- **Framework**: ${framework}`,
+            topFiles.length > 0 ? `- **Key files scanned**: ${topFiles.join(", ")}` : null,
+            topServices.length > 0 ? `- **Services detected**: ${topServices.join(", ")}` : null,
+            topEndpoints.length > 0 ? `- **HTTP endpoints**: ${topEndpoints.join(", ")}` : null,
+        ].filter(Boolean).join("\n");
 
-## Metric Thresholds (use these to explain severity)
+        const systemPrompt = `You are ArchSight Copilot — a world-class software architect and system design expert embedded in the ArchSight code intelligence platform. You are analyzing a REAL codebase and giving answers grounded in actual scan data.
+
+${projectSection}
+
+## Your Mission
+Answer developer questions about their architecture clearly, accurately, and with specific references to their actual files, services, and metrics. You are their personal tech lead.
+
+## Architecture Analysis Data Available
+- **risk_score**: 0–100 composite score (>70 = critical, 50–70 = high, 30–50 = medium, <30 = low)
+- **detected_patterns**: Anti-patterns found (circular_dependency, god_service, bottleneck_node, tight_coupling, deep_dependency_chain, missing_service_boundary, async_bottleneck, risk_concentration)
+- **insights**: Actionable engineering recommendations
+- **implementation_plan**: Prioritized P0/P1/P2 fix plan with steps
+- **metrics**: cycles_detected, density, max_depth, coupling_score, avg_instability, total_nodes, total_edges
+
+## Metric Health Thresholds
 | Metric | Healthy | Warning | Critical |
 |---|---|---|---|
-| risk_score | < 30 | 30–70 | > 70 |
-| cycles_detected | 0 | 1–2 | > 2 |
-| density | < 0.10 | 0.10–0.20 | > 0.20 |
-| max_depth | ≤ 4 | 5–6 | > 6 |
-| coupling_score | < 8 | 8–15 | > 15 |
-| avg_instability | < 0.45 | 0.45–0.65 | > 0.65 |
-| fan_in (per node) | < 5 | 5–8 | > 8 |
+| risk_score | <30 | 30–70 | >70 |
+| cycles_detected | 0 | 1–2 | >2 |
+| density | <0.10 | 0.10–0.20 | >0.20 |
+| max_depth | ≤4 | 5–6 | >6 |
+| coupling_score | <8 | 8–15 | >15 |
+| avg_instability | <0.45 | 0.45–0.65 | >0.65 |
 
-## Pattern Glossary (explain these in plain language)
-- **circular_dependency**: Module A imports B which imports A — a dependency loop. Causes build fragility and makes safe refactoring nearly impossible.
-- **god_service**: One module that everything else depends on. High fan-in. Single point of failure that kills team velocity.
-- **deep_dependency_chain**: Many modules stacked on top of each other. A bug at the bottom cascades all the way up.
-- **tight_coupling**: Too many connections between modules. Changing one thing breaks many others.
-- **bottleneck_node**: A single node with extremely high centrality — every request flows through it. Kills horizontal scaling.
-- **async_bottleneck**: A queue worker that's backed up because only one dispatcher feeds it.
-- **risk_concentration**: Multiple severe problems concentrated in one area of the codebase.
-- **missing_service_boundary**: Database operations called directly from HTTP endpoints with no service layer in between.
+## Pattern Plain-English Reference
+- **circular_dependency** → Module A imports B which imports A. Breaks builds, blocks refactoring.
+- **god_service** → One file everything depends on. Single point of failure.
+- **bottleneck_node** → Single node all requests flow through. Cannot scale horizontally.
+- **tight_coupling** → Too many cross-module connections. One change breaks many things.
+- **deep_dependency_chain** → Bug at bottom cascades all the way up.
+- **missing_service_boundary** → DB queries directly in HTTP handlers. Untestable and fragile.
+- **async_bottleneck** → Single worker dispatcher backing up the queue.
+- **risk_concentration** → Multiple severe issues on one node.
 
-## Answer Rules
-1. **Be specific** — Reference actual numbers from the metrics (e.g., "Your risk score is 72/100, which is Critical territory"). Cite real pattern names and affected nodes.
-2. **Use plain language** — Explain like talking to a sharp second-year engineering student. Real-world analogies are great.
-3. **Be actionable** — Always end with something the developer can actually do.
-4. **Respond in Markdown** — Use headers (##), bullet points, bold, and code blocks where appropriate.
-5. **Be thorough but focused** — For complex questions (system design, architecture patterns), give complete explanations. For simple questions, be concise.
-6. **System design expertise** — You can explain any system design concept: microservices, event-driven architecture, CQRS, CAP theorem, distributed systems, load balancing, caching, database patterns, etc. Tie explanations back to the codebase context when relevant.
-7. **Use conversation history** — Remember what was discussed earlier in the chat. Build on previous answers.
+## Rules
+1. **Cite actual data** — use real file names, real metric numbers, real pattern names from the scan.
+2. **Plain language** — explain like a sharp 2nd-year eng student. Use analogies.
+3. **Always actionable** — end every answer with a concrete next step.
+4. **Markdown format** — use ## headers, bullet points, bold, code blocks.
+5. **Self-aware** — you KNOW this specific project's files, services, and issues. Reference them.
+6. **Jargon-free explanations** — whenever you use a technical term, explain it in one sentence.
+7. For opening briefing: cover risk level + top 3 issues + 2 quick wins. Be encouraging but honest.`;
 
-## For the Opening Briefing (__init__ mode)
-Give a friendly but informative intro summary covering: risk level, top 2-3 problems, and 2 quick wins. Format nicely. End by inviting the developer to ask anything.`;
-
-        // Build the message array: system + optional history + current question
         const messages: Array<{ role: string; content: string }> = [
             { role: "system", content: systemPrompt },
         ];
 
-        // Include structured context as an initial assistant turn if there's no history yet
+        // Inject context once at the start of the conversation
         if (history.length === 0) {
             messages.push({
                 role: "user",
-                content: `Here is the full architecture analysis for my codebase:\n\n${contextBlock}\n\nPlease keep this context in mind for all my questions.`,
+                content: `Here is the complete architecture analysis for ${repoName}:\n\n${contextBlock}\n\nRemember these real files and services when answering: ${[...topFiles, ...topServices].join(", ") || "(none detected yet)"}.`,
             });
             messages.push({
                 role: "assistant",
-                content: "Got it — I've reviewed your full architecture analysis report and have all the context I need. Go ahead and ask me anything about your codebase!",
+                content: `Got it! I've fully absorbed the architecture analysis for **${repoName}**. I can see the real files, services, detected patterns, and all metrics. Ask me anything about your codebase!`,
             });
         }
 
-        // Append conversation history
-        for (const msg of history) {
+        // Append prior conversation history (cap to last 6 turns to avoid context bloat)
+        const recentHistory = history.slice(-6);
+        for (const msg of recentHistory) {
             messages.push({ role: msg.role, content: msg.content });
         }
 
-        // Append current question (or init prompt)
         if (isInitMode) {
             messages.push({
                 role: "user",
-                content: `Give me a friendly opening briefing about my codebase — what's the overall health, what are the top 2-3 issues I should know about, and 2 quick wins I can start with. Be encouraging but honest. Use Markdown formatting.`,
+                content: `Give me an opening briefing on ${repoName}: overall health, top 3 architecture problems with specific file/service names, and 2 quick wins. Be encouraging but honest. Keep it focused — 300 words max.`,
             });
         } else {
             messages.push({ role: "user", content: q });
         }
 
-        return callGroqChatMessages(systemPrompt, messages, report.summary);
+        return callGroqChatMessages(messages, report.summary);
     }
 
-    // ── Deterministic Fallback (no CEREBRAS key) ─────────────────────────────
+    // ── Deterministic Fallback (no Groq key) ─────────────────────────────
     if (isInitMode) {
         return `## 📊 Architecture Briefing\n\n${report.summary}\n\n**Top Action:** ${report.implementation_plan[0]?.title ?? "No high-priority actions detected."}\n\nAsk me about specific risks, patterns, or what to fix first!`;
     }
@@ -1040,67 +1112,58 @@ Give a friendly but informative intro summary covering: risk level, top 2-3 prob
 }
 
 async function callGroqChatMessages(
-    _systemPrompt: string,
     messages: Array<{ role: string; content: string }>,
     fallback: string
 ): Promise<string> {
-    if (!cerebrasClient) return fallback;
+    if (!groqClient) return fallback;
 
     try {
         const completion = await withTimeout(
-            cerebrasClient.chat.completions.create({
-                model: CEREBRAS_MODEL,
+            groqClient.chat.completions.create({
+                model: GROQ_MODEL,
                 temperature: 0.5,
-                max_tokens: 4000,
-                messages: messages as any,
+                max_tokens: 2048,
+                messages: messages as Parameters<typeof groqClient.chat.completions.create>[0]["messages"],
             }),
-            25000,
+            30000,
             null
         );
 
         if (!completion) {
-            return "The AI engine took too long to respond. The requested model (" + CEREBRAS_MODEL + ") might be unavailable or hanging on the Cerebras side.";
+            return `The AI engine timed out. Please try a shorter question or try again in a moment.`;
         }
 
-        return (completion as any).choices?.[0]?.message?.content ?? fallback;
-    } catch (err) {
-        console.error("[ArchSight Copilot] Cerebras call failed:", err);
-        return fallback;
+        return completion.choices?.[0]?.message?.content ?? fallback;
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[ArchSight Copilot] Groq chat call failed:", msg);
+        // Surface a helpful error rather than silent fallback
+        return `## ⚠️ Copilot Error\n\nThe Groq API returned an error: \`${msg}\`\n\nCheck that \`GROQ_API_KEY\` is valid and model \`${GROQ_MODEL}\` is available.`;
     }
 }
 
 
 export async function generateSimpleReport(report: ReportPayload): Promise<string> {
-    const systemPrompt = "You are a senior software architect reviewing a codebase analysis report.";
-    const userPrompt = `I will provide you with an architecture intelligence report generated by a tool.
+    const systemPrompt = "You are a senior software architect explaining a code analysis report simply and clearly.";
+    // Trim the markdown to avoid token overflow — first 4000 chars covers all key sections
+    const trimmedReport = report.report_markdown.slice(0, 4000);
+    const userPrompt = `Architecture analysis report (trimmed):
 
-Your task:
-1. Explain the report in VERY SIMPLE language (as if explaining to a 2nd year engineering student).
-2. Identify the REAL root problems behind the metrics (not just repeat the report).
-3. Translate technical terms like "risk concentration", "deep dependency chain", "god service" into practical meaning.
-4. Give real-world analogies wherever possible.
-5. Provide a simple actionable summary.
-6. End with 3 clear next steps the developer should do THIS WEEK.
+${trimmedReport}
 
-Do not be overly technical. Keep it engaging, educational, and easy to read. Format nicely in Markdown with clear headers and bullet points.
+Your task — explain this in SIMPLE language:
+1. What is the overall health of this codebase? (1-2 sentences)
+2. What are the 3 biggest real problems? Use plain English and real-world analogies.
+3. Translate terms like "risk concentration", "god service", "coupling" into what they mean practically.
+4. Give 3 specific next steps the developer should do THIS WEEK.
 
-Here is the report:
-${report.report_markdown}`;
+Format in Markdown. Be engaging and concise — max 500 words.`;
 
-    const simpleSection = CEREBRAS_API_KEY
+    const simpleSection = GROQ_API_KEY
         ? await callGroqText(systemPrompt, userPrompt, "")
         : "";
 
-    // Combine: friendly summary first, then full technical report appended
-    const separator = `
-
----
-
-# 📊 Full Technical Report
-
-> The following is the complete deterministic analysis generated by the ArchSight Intelligence Engine.
-
-`;
+    const separator = `\n\n---\n\n# 📊 Full Technical Report\n\n> The following is the complete deterministic analysis generated by the ArchSight Intelligence Engine.\n\n`;
 
     return simpleSection
         ? `${simpleSection}${separator}${report.report_markdown}`
