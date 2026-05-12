@@ -166,6 +166,37 @@ router.post("/:scanId/chat", async (req, res) => {
         }
 
         // Build the full structured context to pass to the LLM
+        // Declare repo/branch first — needed in structuredContext below
+        const repoFullName = `${ownedScan.repository.owner}/${ownedScan.repository.name}`;
+        const branch = ownedScan.branch;
+
+        // Extract project-aware fields from the scan graph for copilot context
+        const raw = ownedScan.rawAst as Record<string, unknown> | null;
+        const graph = raw?.architecture as { nodes?: Array<{ type: string; name: string; file: string; metadata?: Record<string, unknown> }>; file_structure?: Array<{ file: string }> } | undefined;
+
+        const allNodes = graph?.nodes ?? [];
+        const fileStructure = graph?.file_structure ?? [];
+
+        const sanitize = (p: string) => {
+            const idx = p.indexOf("/extracted/");
+            if (idx >= 0) {
+                const parts = p.slice(idx + "/extracted/".length).split("/");
+                return parts.length > 1 ? parts.slice(1).join("/") : p;
+            }
+            return p.split("/").slice(-3).join("/");
+        };
+
+        const projectFiles = [...new Set(fileStructure.map(f => sanitize(f.file)))].slice(0, 15);
+        const projectServices = [...new Set(
+            allNodes.filter(n => n.type === "business_logic_service" || n.type === "external_service").map(n => n.name)
+        )].slice(0, 12);
+        const projectEndpoints = [...new Set(
+            allNodes.filter(n => n.type === "http_endpoint").map(n => {
+                const method = (n.metadata?.method as string | undefined) ?? "";
+                return method ? `${method} ${n.name}` : n.name;
+            })
+        )].slice(0, 10);
+
         const structuredContext = {
             overall_risk_level: output.overall_risk_level,
             architectural_theme: output.architectural_theme,
@@ -177,11 +208,16 @@ router.post("/:scanId/chat", async (req, res) => {
             metrics: output.metrics as unknown as Record<string, unknown>,
             detected_patterns: output.detected_patterns as unknown[],
             insights: output.insights as unknown[],
+            // Project-aware fields for copilot self-awareness
+            project_files: projectFiles,
+            project_services: projectServices,
+            project_endpoints: projectEndpoints,
+            repo_name: repoFullName,
+            framework: raw?.framework as string | undefined ?? ownedScan.repository.name,
         };
 
-        const repoFullName = `${ownedScan.repository.owner}/${ownedScan.repository.name}`;
-        const branch = ownedScan.branch;
         const report = await buildReportPayload(output, repoFullName, branch);
+
 
         let reply: string;
         let finalMarkdown = report.report_markdown;
